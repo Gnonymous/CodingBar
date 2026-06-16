@@ -25,6 +25,14 @@ enum RenderDebug {
     }
 
     @MainActor
+    static func renderPanel(to path: String, tab: Int) {
+        let store = UsageStore()   // initialized with Snapshot.sample()
+        let view = PanelView(store: store, initialTab: tab, scrollable: false, onQuit: {})
+            .environment(\.colorScheme, .dark)
+        write(view, to: path, scale: 2)
+    }
+
+    @MainActor
     private static func write<V: View>(_ view: V, to path: String, scale: CGFloat) {
         let renderer = ImageRenderer(content: view)
         renderer.scale = scale

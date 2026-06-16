@@ -39,7 +39,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: PanelPlaceholderView(store: store))
+        popover.contentViewController = NSHostingController(rootView: PanelView(store: store))
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {

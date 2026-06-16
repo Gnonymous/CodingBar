@@ -21,6 +21,13 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-menubar"), i + 1 < Com
     MainActor.assumeIsolated { RenderDebug.renderMenuBar(to: path) }
     exit(0)
 }
+if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < CommandLine.arguments.count {
+    _ = NSApplication.shared
+    let path = CommandLine.arguments[i + 1]
+    let tab = Int(CommandLine.arguments[i + 2]) ?? 0
+    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab) }
+    exit(0)
+}
 
 // GUI mode: a background (accessory) menu bar app.
 let app = NSApplication.shared

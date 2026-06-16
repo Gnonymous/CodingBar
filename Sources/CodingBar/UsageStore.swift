@@ -24,7 +24,7 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    static func humanTokens(_ n: Int) -> String {
+    nonisolated static func humanTokens(_ n: Int) -> String {
         switch n {
         case ..<1_000: return "\(n)"
         case ..<1_000_000: return String(format: "%.1fK", Double(n) / 1_000)
