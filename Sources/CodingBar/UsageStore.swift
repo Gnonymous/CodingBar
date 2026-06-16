@@ -17,6 +17,10 @@ final class UsageStore: ObservableObject {
         }
     }
 
+    func toggleMetric() {
+        menuMetric = (menuMetric == .tokens) ? .cost : .tokens
+    }
+
     func refresh() {
         Task.detached(priority: .userInitiated) {
             let snap = Aggregator.run()

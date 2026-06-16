@@ -14,6 +14,10 @@ if CommandLine.arguments.contains("--dump-json") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--self-test") {
+    exit(Int32(SelfTest.run()))
+}
+
 // Debug: rasterize UI components to a PNG (display-independent verification).
 if let i = CommandLine.arguments.firstIndex(of: "--render-menubar"), i + 1 < CommandLine.arguments.count {
     _ = NSApplication.shared

@@ -7,12 +7,10 @@ enum FuelCalculator {
     // Maximum context window by model family
     static func maxTokens(forModel model: String) -> Int {
         let lower = model.lowercased()
-        // All current Claude models: 200 k context
-        if lower.contains("claude") || lower.contains("opus") || lower.contains("sonnet")
-            || lower.contains("haiku") || lower.contains("fable") {
-            return 200_000
+        if lower.contains("[1m]") || lower.contains("-1m") || lower.contains(" 1m") {
+            return 1_000_000   // 1M-context variants (e.g. claude-opus-4-8[1m])
         }
-        return 200_000  // conservative fallback
+        return 200_000  // default Claude context window
     }
 
     // MARK: - FuelGauge
@@ -77,14 +75,18 @@ enum FuelCalculator {
         // (this is the full context fed to the model on that turn)
         let last = sorted.last!
         let usedTokens = last.tokens.input + last.tokens.cacheRead + last.tokens.cacheWrite
-        let maxTok = maxTokens(forModel: last.model)
+        // Detect 1M-context models even when the model string lacks the marker:
+        // if the live context already exceeds the assumed window, it must be larger.
+        var maxTok = maxTokens(forModel: last.model)
+        if usedTokens > maxTok { maxTok = 1_000_000 }
 
-        // avgTokensPerTurn = average output tokens per assistant turn
-        // (output growth approximates what each turn "adds" to the conversation context)
-        let totalOutput = sorted.reduce(0) { $0 + $1.tokens.output }
-        let avgOutput = sorted.count > 0 ? totalOutput / sorted.count : 1
+        // Estimate remaining turns from average context GROWTH per turn so far
+        // (total context / turns ≈ what each turn adds), far more realistic than
+        // using output tokens alone.
+        let turns = max(sorted.count, 1)
+        let avgGrowthPerTurn = max(usedTokens / turns, 1)
         let remaining = max(0, maxTok - usedTokens)
-        let estRemainingTurns = avgOutput > 0 ? remaining / avgOutput : 0
+        let estRemainingTurns = remaining / avgGrowthPerTurn
 
         // Throughput: tokens/sec based on last minute of activity
         var throughput: Double = 0

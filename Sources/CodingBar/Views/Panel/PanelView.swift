@@ -95,7 +95,7 @@ struct PanelView: View {
             Spacer()
             HStack(spacing: 14) {
                 footerButton("arrow.clockwise") { store.refresh() }
-                footerButton("gearshape") { }
+                footerButton("textformat.123") { store.toggleMetric() }
                 footerButton("power") { onQuit() }
             }
         }
