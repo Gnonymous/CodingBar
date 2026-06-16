@@ -79,18 +79,18 @@ public enum ClaudeScanner {
             // cwd
             let cwd = obj["cwd"] as? String ?? ""
 
-            // Tool names from content array
-            var toolName: String? = nil
-            if let content = message["content"] as? [[String: Any]] {
-                for item in content {
+            // Collect ALL tool_use names in this turn's content array
+            var allToolNames: [String] = []
+            if let contentArray = message["content"] as? [[String: Any]] {
+                for item in contentArray {
                     if let itemType = item["type"] as? String,
                        itemType == "tool_use",
                        let name = item["name"] as? String {
-                        toolName = name
-                        break
+                        allToolNames.append(name)
                     }
                 }
             }
+            let toolName = allToolNames.first
 
             let tokens = TokenBreakdown(
                 input: inputTokens,
@@ -107,8 +107,10 @@ public enum ClaudeScanner {
                 cwd: cwd,
                 tokens: tokens,
                 toolName: toolName,
+                toolNames: allToolNames,
                 messageId: messageId,
-                sessionKey: sessionKey
+                sessionKey: sessionKey,
+                hasInterrupt: trimmed.contains("[Request interrupted")
             )
             records.append(record)
         }

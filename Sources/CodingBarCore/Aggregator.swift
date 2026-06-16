@@ -147,28 +147,41 @@ public enum Aggregator {
 
         let quotaPercent: Double? = quota.first?.remaining
 
+        // ── Insight pillars ──────────────────────────────────────────────────
+
+        // Pillar ③ — Habits (tool mix, rhythm, heatmap)
+        let habits = Behavior.build(from: allRecords, todayStart: todayStart, now: now)
+
+        // Pillar ② — Fuel gauge + active/throughput
+        let (fuelGauge, isActive, throughput) = FuelCalculator.build(from: claudeRecords, now: now)
+
+        // Pillar ④ — Forecast
+        let forecastInsight = Forecaster.recordAndForecast(quota: quota, now: now)
+
+        // Pillar ④b — Coach tips
+        var coach: [Insight] = Coach.build(from: todayRecords)
+        if let fi = forecastInsight { coach.append(fi) }
+
+        // Pillar ① — Git output (today's active project cwds)
+        let output = GitCorrelator.build(fromTodayCwds: todayCwds, now: now)
+
+        // ── Assemble ─────────────────────────────────────────────────────────
+
         let menu = MenuSummary(
             metric: .tokens,
             primaryText: primaryText,
             quotaPercent: quotaPercent,
-            active: false,
-            throughput: 0
+            active: isActive,
+            throughput: throughput
         )
 
         // 10. Overview
         let overview = Overview(
             range: .today,
             spend: PeriodTotals(cost: todayCost, tokens: todayTokens, sessions: todaySessions),
-            output: OutputStat(),
+            output: output,
             deltaVsPrevPct: deltaVsPrevPct,
             trend: trend
-        )
-
-        // 11. Habits (placeholder)
-        let habits = Habits(
-            toolMix: ToolMix(),
-            rhythm: Rhythm(),
-            heatmap: Heatmap(cells: [], peakLabel: "")
         )
 
         return Snapshot(
@@ -180,8 +193,8 @@ public enum Aggregator {
             models: models,
             cache: cache,
             quota: quota,
-            coach: [],
-            fuel: nil
+            coach: coach,
+            fuel: fuelGauge
         )
     }
 }

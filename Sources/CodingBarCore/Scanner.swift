@@ -8,9 +8,11 @@ struct RawRecord {
     var timestamp: Date
     var cwd: String
     var tokens: TokenBreakdown
-    var toolName: String?
+    var toolName: String?       // first tool in this turn (backwards compat)
+    var toolNames: [String]     // ALL tool_use names in this turn
     var messageId: String?
-    var sessionKey: String  // file path stem, used for session counting
+    var sessionKey: String      // file path stem, used for session counting
+    var hasInterrupt: Bool      // true if the raw line contained "[Request interrupted"
 }
 
 // MARK: - Scanner
@@ -41,8 +43,10 @@ final class Scanner {
         var cacheWrite: Int
         var reasoning: Int
         var toolName: String?
+        var toolNames: [String]
         var messageId: String?
         var sessionKey: String
+        var hasInterrupt: Bool
     }
 
     // MARK: State
@@ -113,8 +117,10 @@ final class Scanner {
             cwd: c.cwd,
             tokens: TokenBreakdown(input: c.input, output: c.output, cacheRead: c.cacheRead, cacheWrite: c.cacheWrite, reasoning: c.reasoning),
             toolName: c.toolName,
+            toolNames: c.toolNames,
             messageId: c.messageId,
-            sessionKey: c.sessionKey
+            sessionKey: c.sessionKey,
+            hasInterrupt: c.hasInterrupt
         )
     }
 
@@ -130,8 +136,10 @@ final class Scanner {
             cacheWrite: r.tokens.cacheWrite,
             reasoning: r.tokens.reasoning,
             toolName: r.toolName,
+            toolNames: r.toolNames,
             messageId: r.messageId,
-            sessionKey: r.sessionKey
+            sessionKey: r.sessionKey,
+            hasInterrupt: r.hasInterrupt
         )
     }
 

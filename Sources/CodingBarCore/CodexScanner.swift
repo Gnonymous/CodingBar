@@ -143,8 +143,10 @@ public enum CodexScanner {
                     cwd: cwd,
                     tokens: tokens,
                     toolName: nil,
+                    toolNames: [],
                     messageId: nil,
-                    sessionKey: sessionKey
+                    sessionKey: sessionKey,
+                    hasInterrupt: false
                 )
                 records.append(record)
 
