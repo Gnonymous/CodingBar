@@ -1,0 +1,187 @@
+import Foundation
+
+public enum Aggregator {
+
+    public static func run(now: Date = Date()) -> Snapshot {
+        let cal = Calendar.current
+
+        // 1. Scan all sources
+        let (claudeRecords, _) = ClaudeScanner.scan()
+        let (codexRecords, quota) = CodexScanner.scan()
+        let allRecords = claudeRecords + codexRecords
+
+        // 2. Date helpers
+        let todayStart = cal.startOfDay(for: now)
+        func isToday(_ date: Date) -> Bool { date >= todayStart && date <= now }
+        func dayStart(_ date: Date) -> Date { cal.startOfDay(for: date) }
+
+        // 3. Today's records
+        let todayRecords = allRecords.filter { isToday($0.timestamp) }
+
+        // 4. Overview — spend
+        var todayCost: Double = 0
+        var todayTokens = TokenBreakdown()
+        var todayCwds = Set<String>()
+
+        for r in todayRecords {
+            let c = Pricing.cost(model: r.model, tokens: r.tokens)
+            todayCost += c
+            todayTokens += r.tokens
+            if !r.cwd.isEmpty { todayCwds.insert(r.cwd) }
+        }
+
+        let todaySessions = todayCwds.count
+
+        // 5. Trend — last 7 calendar days
+        var trend: [DayPoint] = []
+        var yesterdayCost: Double = 0
+        for dayOffset in (0..<7).reversed() {
+            guard let d = cal.date(byAdding: .day, value: -dayOffset, to: todayStart) else { continue }
+            let nextDay = cal.date(byAdding: .day, value: 1, to: d) ?? d
+            var dayCost: Double = 0
+            var dayTotalTokens = 0
+            for r in allRecords {
+                let ds = dayStart(r.timestamp)
+                if ds >= d && r.timestamp < nextDay {
+                    let c = Pricing.cost(model: r.model, tokens: r.tokens)
+                    dayCost += c
+                    dayTotalTokens += r.tokens.total
+                }
+            }
+            trend.append(DayPoint(date: d, cost: dayCost, tokens: dayTotalTokens))
+            if dayOffset == 1 { yesterdayCost = dayCost }
+        }
+
+        let deltaVsPrevPct: Double
+        if yesterdayCost > 0 {
+            deltaVsPrevPct = (todayCost - yesterdayCost) / yesterdayCost * 100
+        } else {
+            deltaVsPrevPct = 0
+        }
+
+        // 6. Models — group by normalized model, sort by cost desc
+        var modelMap: [String: (tokens: TokenBreakdown, cost: Double)] = [:]
+        for r in allRecords {
+            let key = Pricing.normalize(model: r.model)
+            var entry = modelMap[key] ?? (tokens: TokenBreakdown(), cost: 0)
+            entry.tokens += r.tokens
+            entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
+            modelMap[key] = entry
+        }
+
+        let models: [ModelStat] = modelMap
+            .map { key, entry in
+                ModelStat(
+                    model: key,
+                    provider: Pricing.provider(forCanonicalKey: key),
+                    tokens: entry.tokens,
+                    cost: entry.cost
+                )
+            }
+            .sorted { $0.cost > $1.cost }
+
+        // 7. Projects — group by cwd, top 8 by cost
+        var projectMap: [String: (tokens: TokenBreakdown, cost: Double, lastActive: Date)] = [:]
+        for r in allRecords {
+            guard !r.cwd.isEmpty else { continue }
+            var entry = projectMap[r.cwd] ?? (tokens: TokenBreakdown(), cost: 0, lastActive: Date.distantPast)
+            entry.tokens += r.tokens
+            entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
+            if r.timestamp > entry.lastActive { entry.lastActive = r.timestamp }
+            projectMap[r.cwd] = entry
+        }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let projects: [ProjectStat] = projectMap
+            .map { cwd, entry -> ProjectStat in
+                let displayPath = cwd.hasPrefix(home)
+                    ? "~" + cwd.dropFirst(home.count)
+                    : cwd
+                let name = URL(fileURLWithPath: cwd).lastPathComponent
+                return ProjectStat(
+                    name: name,
+                    path: displayPath,
+                    tokens: entry.tokens,
+                    cost: entry.cost,
+                    lastActive: entry.lastActive
+                )
+            }
+            .sorted { $0.cost > $1.cost }
+            .prefix(8)
+            .map { $0 }
+
+        // 8. Cache stats — Claude only
+        var totalCacheRead = 0
+        var totalCacheWrite = 0
+        var totalInput = 0
+        var totalSavedWeightedRead = 0.0
+
+        for r in claudeRecords {
+            totalCacheRead  += r.tokens.cacheRead
+            totalCacheWrite += r.tokens.cacheWrite
+            totalInput      += r.tokens.input
+            let key = Pricing.normalize(model: r.model)
+            let iPrice  = Pricing.inputPrice(forCanonicalKey: key)
+            let crPrice = Pricing.cacheReadPrice(forCanonicalKey: key)
+            totalSavedWeightedRead += Double(r.tokens.cacheRead) * (iPrice - crPrice)
+        }
+
+        let denominator = totalCacheRead + totalCacheWrite + totalInput
+        let hitRate = denominator > 0 ? Double(totalCacheRead) / Double(denominator) : 0
+        let savedUSD = totalSavedWeightedRead / 1_000_000
+
+        let cache = CacheStat(hitRate: hitRate, savedUSD: savedUSD)
+
+        // 9. Menu — token display
+        let totalTodayTokens = todayTokens.total
+        let primaryText: String
+        if totalTodayTokens >= 1_000_000 {
+            let val = Double(totalTodayTokens) / 1_000_000
+            primaryText = String(format: "%.1fM", val)
+        } else if totalTodayTokens >= 1_000 {
+            let val = Double(totalTodayTokens) / 1_000
+            primaryText = String(format: "%.0fK", val)
+        } else {
+            primaryText = "\(totalTodayTokens)"
+        }
+
+        let quotaPercent: Double? = quota.first?.remaining
+
+        let menu = MenuSummary(
+            metric: .tokens,
+            primaryText: primaryText,
+            quotaPercent: quotaPercent,
+            active: false,
+            throughput: 0
+        )
+
+        // 10. Overview
+        let overview = Overview(
+            range: .today,
+            spend: PeriodTotals(cost: todayCost, tokens: todayTokens, sessions: todaySessions),
+            output: OutputStat(),
+            deltaVsPrevPct: deltaVsPrevPct,
+            trend: trend
+        )
+
+        // 11. Habits (placeholder)
+        let habits = Habits(
+            toolMix: ToolMix(),
+            rhythm: Rhythm(),
+            heatmap: Heatmap(cells: [], peakLabel: "")
+        )
+
+        return Snapshot(
+            generatedAt: now,
+            menu: menu,
+            overview: overview,
+            habits: habits,
+            projects: projects,
+            models: models,
+            cache: cache,
+            quota: quota,
+            coach: [],
+            fuel: nil
+        )
+    }
+}

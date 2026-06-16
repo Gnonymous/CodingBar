@@ -1,0 +1,126 @@
+import Foundation
+
+public enum ClaudeScanner {
+
+    static func scan() -> (records: [RawRecord], seenIds: Set<String>) {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let projectsDir = home
+            .appendingPathComponent(".claude")
+            .appendingPathComponent("projects")
+
+        guard FileManager.default.fileExists(atPath: projectsDir.path) else {
+            return ([], [])
+        }
+
+        let scanner = Scanner()
+        var seenIds = Set<String>()
+        var allRecords: [RawRecord] = []
+
+        let records = scanner.scan(directory: projectsDir) { fileURL in
+            parseFile(fileURL)
+        }
+
+        // Dedup by message.id across all files
+        for record in records {
+            if let mid = record.messageId {
+                guard seenIds.insert(mid).inserted else { continue }
+            }
+            allRecords.append(record)
+        }
+
+        return (allRecords, seenIds)
+    }
+
+    // MARK: - File parsing
+
+    static func parseFile(_ fileURL: URL) -> [RawRecord] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let content = String(data: data, encoding: .utf8) else {
+            return []
+        }
+
+        let sessionKey = fileURL.deletingPathExtension().lastPathComponent
+        let iso = makeISO8601Formatter()
+
+        var records: [RawRecord] = []
+
+        for line in content.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty,
+                  let lineData = trimmed.data(using: .utf8),
+                  let obj = (try? JSONSerialization.jsonObject(with: lineData)) as? [String: Any] else {
+                continue
+            }
+
+            // Must be type == "assistant"
+            guard let type = obj["type"] as? String, type == "assistant" else { continue }
+
+            // Must have message with usage
+            guard let message = obj["message"] as? [String: Any],
+                  let usage = message["usage"] as? [String: Any] else {
+                continue
+            }
+
+            let inputTokens = usage["input_tokens"] as? Int ?? 0
+            let cacheWrite  = usage["cache_creation_input_tokens"] as? Int ?? 0
+            let cacheRead   = usage["cache_read_input_tokens"] as? Int ?? 0
+            let outputTokens = usage["output_tokens"] as? Int ?? 0
+
+            // Skip zero-usage lines
+            guard inputTokens + outputTokens + cacheRead + cacheWrite > 0 else { continue }
+
+            let model = message["model"] as? String ?? "unknown"
+            let messageId = message["id"] as? String
+
+            // Parse timestamp
+            let tsString = obj["timestamp"] as? String ?? ""
+            let timestamp = iso.date(from: tsString) ?? Date()
+
+            // cwd
+            let cwd = obj["cwd"] as? String ?? ""
+
+            // Tool names from content array
+            var toolName: String? = nil
+            if let content = message["content"] as? [[String: Any]] {
+                for item in content {
+                    if let itemType = item["type"] as? String,
+                       itemType == "tool_use",
+                       let name = item["name"] as? String {
+                        toolName = name
+                        break
+                    }
+                }
+            }
+
+            let tokens = TokenBreakdown(
+                input: inputTokens,
+                output: outputTokens,
+                cacheRead: cacheRead,
+                cacheWrite: cacheWrite,
+                reasoning: 0
+            )
+
+            let record = RawRecord(
+                provider: .claude,
+                model: model,
+                timestamp: timestamp,
+                cwd: cwd,
+                tokens: tokens,
+                toolName: toolName,
+                messageId: messageId,
+                sessionKey: sessionKey
+            )
+            records.append(record)
+        }
+
+        return records
+    }
+
+    // MARK: - Helpers
+
+    private static func makeISO8601Formatter() -> ISO8601DateFormatter {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }
+}

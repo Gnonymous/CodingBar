@@ -4,7 +4,7 @@ import CodingBarCore
 // Headless mode: print the computed snapshot as JSON and exit. Lets us verify the
 // data layer against real local logs without launching the GUI.
 if CommandLine.arguments.contains("--dump-json") {
-    let snap = Snapshot.sample()   // TODO: swap to Aggregator.run() once the scanners land
+    let snap = Aggregator.run()   // was: Snapshot.sample()
     let enc = JSONEncoder()
     enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     enc.dateEncodingStrategy = .iso8601
