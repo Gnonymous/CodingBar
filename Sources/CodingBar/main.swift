@@ -14,9 +14,17 @@ if CommandLine.arguments.contains("--dump-json") {
     exit(0)
 }
 
+// Debug: rasterize UI components to a PNG (display-independent verification).
+if let i = CommandLine.arguments.firstIndex(of: "--render-menubar"), i + 1 < CommandLine.arguments.count {
+    _ = NSApplication.shared
+    let path = CommandLine.arguments[i + 1]
+    MainActor.assumeIsolated { RenderDebug.renderMenuBar(to: path) }
+    exit(0)
+}
+
 // GUI mode: a background (accessory) menu bar app.
 let app = NSApplication.shared
-let delegate = AppDelegate()
+let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
