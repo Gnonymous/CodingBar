@@ -1,0 +1,25 @@
+# SwiftPM build artifacts
+.build/
+.swiftpm/
+*.xcodeproj
+DerivedData/
+
+# Packaged app
+*.app
+dist/
+
+# macOS
+.DS_Store
+
+# Reference clones (other people's repos, kept locally for research only — never committed)
+/CodexBar/
+/keyStats/
+/tokei/
+
+# Playwright / mockup scratch
+.playwright-mcp/
+mockups/.playwright-mcp/
+*verify*.png
+
+# Brainstorming visual-companion scratch
+.superpowers/
