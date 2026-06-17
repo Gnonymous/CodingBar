@@ -2,7 +2,7 @@
 
 <div align="center">
   <h1>CodingBar</h1>
-  <p><b>A co-pilot dashboard for your AI coding agents — right in the macOS menu bar.</b></p>
+  <p><b>See what your AI coding agents actually did — from the macOS menu bar.</b></p>
   <a href="https://github.com/Gnonymous/CodingBar/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Gnonymous/CodingBar/ci.yml?branch=main&style=flat-square&label=build" alt="Build"></a>
   <a href="https://github.com/Gnonymous/CodingBar/stargazers"><img src="https://img.shields.io/github/stars/Gnonymous/CodingBar?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/Gnonymous/CodingBar/releases"><img src="https://img.shields.io/github/v/tag/Gnonymous/CodingBar?label=version&style=flat-square" alt="Version"></a>
@@ -35,17 +35,17 @@
 
 ## Why
 
-Tokei and CodexBar are **bills** — how much you spent. CodingBar is a **co-pilot dashboard**: what you and the AI actually got done, whether it was worth it, and how to make it more worth it. Tokens, cost and quota become the foundation; insight sits on top.
+Tokei and CodexBar show you a **bill**. CodingBar shows you a **dashboard**: what you and the AI got done, whether it was worth it, and how to spend smarter next time. Tokens and cost are the foundation; insight is the point.
 
-Everything is read from your local **Claude Code** and **Codex** logs — incremental, no external dependencies, no Xcode. **Only live quota touches the network**, with a read-only call using your own token.
+Everything is read from your local **Claude Code** and **Codex** logs — incremental, zero external dependencies, no Xcode. **Only live quota touches the network**, a read-only call with your own token.
 
 ## Features
 
-- **Outcome over spend**: pairs git output (+/− lines · commits · files) against today's cost, with `$/line` and `$/commit`. Spend you can finally read as *work done*.
-- **Live coach**: a current-session context fuel gauge (with 1M-context detection), a linear quota burn-down forecast, and money tips like *"8 simple tasks ran on Opus — Haiku would've saved $0.9"*.
-- **Behavior mirror**: your tool-use mix (write / read / run / search), collaboration rhythm, and a golden-hours activity heatmap — all from the `tool_use` events in your logs.
-- **A living menu bar**: a monochrome pulse that beats with real-time throughput, plus two rows of strict tabular figures — today's tokens / spend and remaining quota at a glance.
-- **Local-first & private**: usage, cost, behavior and git are 100% offline. Quota is the only network call — a read-only GET of *your* usage, nothing uploaded, credentials read without ever showing a password prompt.
+- **Outcome over spend**: pairs git output (+/− lines · commits · files) against today's cost, with `$/line` and `$/commit`. Cost you can finally read as *work done*.
+- **Live coach**: a context fuel gauge for the current session (with 1M-context detection), a quota burn-down forecast, and savings tips like *"8 simple tasks ran on Opus — Haiku would've saved $0.9"*.
+- **Behavior mirror**: your tool-use mix (write / read / run / search), collaboration rhythm, and a golden-hours heatmap — all derived from the `tool_use` events in your logs.
+- **A living menu bar**: a monochrome pulse that beats with real-time throughput, plus two rows of strict tabular figures — today's tokens / spend and remaining quota, always visible.
+- **Local-first & private**: usage, cost, behavior and git stay 100% offline. Quota is the only network call — a read-only GET of *your* usage, nothing uploaded, no password prompts.
 - **Native & zero-dependency**: pure SwiftPM, no Xcode project, no third-party packages. Reads `~/.claude/projects` and `~/.codex/sessions` directly.
 
 ## Install
@@ -75,17 +75,17 @@ make package    # produce dist/CodingBar.app
 
 ## The panel
 
-Click the menu-bar item for a three-tab panel:
+Click the menu-bar item to open a three-tab panel:
 
-- **Overview** (总览) — the *outcome ↔ cost* hero (git output ‖ today's spend), `$/line` & `$/commit`, the live coach (context fuel + savings tips), live quota bars with burn-down forecasts, and a 7-day trend.
-- **Composition** (构成) — where the money went: spend by model and by project.
-- **Insights** (洞察) — code output, your tool-use mix, a golden-hours heatmap, plus savings tips and a quota-depletion forecast.
+- **Overview** (总览) — outcome next to cost (git output ‖ today's spend), `$/line` & `$/commit`, the live coach (context fuel + savings tips), quota bars with burn-down forecasts, and a 7-day trend.
+- **Composition** (构成) — where the money went: spend broken down by model and by project.
+- **Insights** (洞察) — code output, tool-use mix, golden-hours heatmap, savings tips, and a quota-depletion forecast.
 
 ## Privacy
 
 - **Usage / cost / behavior / git** — 100% local and offline. Reads only `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`. The price table (`Sources/CodingBar/Resources/pricing.json`) is user-editable.
 - **Quota** — the only networked path. A **read-only GET** with your own OAuth token to each provider's usage endpoint (Claude `api.anthropic.com/api/oauth/usage`, Codex `chatgpt.com/backend-api/wham/usage`). It never uploads local content and never reads billing detail. 5-minute TTL cache.
-- **Prompt-free credentials** — Claude's OAuth token lives in the Keychain. A self-signed app reading it directly makes macOS re-prompt endlessly, so CodingBar spawns the Apple-signed `/usr/bin/security` (inside that entry's trusted ACL) to read it silently, and degrades to *"quota unavailable"* if it can't. **It never shows a password prompt.** Codex uses `~/.codex/auth.json`.
+- **No password prompts** — Claude's OAuth token lives in the Keychain. A self-signed app reading it directly makes macOS re-prompt endlessly, so CodingBar spawns the Apple-signed `/usr/bin/security` (inside that entry's trusted ACL) to read it silently, and degrades to *"quota unavailable"* if it can't. **Never a password dialog.** Codex uses `~/.codex/auth.json`.
 
 ## Architecture
 
@@ -98,16 +98,16 @@ Because the layers are decoupled, `swift run CodingBar --dump-json` verifies dat
 
 ## Roadmap
 
-v1 ships everything above. Next:
+v1 ships everything above. Up next:
 
 - Wire the range switcher through (Overview is "today"; model / project / cache are "all-time", labeled as such).
-- A designed app icon (the menu bar currently uses a placeholder pulse glyph).
+- A proper app icon (the menu bar currently uses a placeholder pulse glyph).
 - Auto-update (Sparkle) and notarized builds.
 
 ## Contributing
 
-Issues and PRs welcome. Read [`CLAUDE.md`](CLAUDE.md) first — it documents the architecture, the frozen `Models.swift` contract, the comment philosophy, and the credential / privacy landmines. CI keeps `swift build` and `swift test` green on every push.
+Issues and PRs welcome. Please read [`CLAUDE.md`](CLAUDE.md) first — it covers the architecture, the frozen `Models.swift` contract, comment philosophy, and credential / privacy landmines. CI keeps `swift build` and `swift test` green on every push.
 
 ## License
 
-[Apache License 2.0](LICENSE). If you fork CodingBar into your own product, please give it a different name and credit CodingBar as the source. Reference projects (KeyStats / Tokei / CodexBar) are kept locally for research only and are **not** distributed with this repository.
+[Apache License 2.0](LICENSE). If you fork CodingBar into your own product, a different name and a credit back would be appreciated. Reference projects (KeyStats / Tokei / CodexBar) are kept locally for research only and are **not** distributed with this repository.
