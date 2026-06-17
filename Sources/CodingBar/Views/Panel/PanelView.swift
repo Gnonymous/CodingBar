@@ -95,7 +95,7 @@ struct PanelView: View {
         let isCost = store.menuMetric == .cost
         return Button { store.toggleMetric() } label: {
             Image(systemName: isCost ? "dollarsign" : "number")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(dc.fg3)
+                .font(.system(size: 8, weight: .regular)).foregroundStyle(dc.fg3)
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .contentShape(Rectangle())
         }
