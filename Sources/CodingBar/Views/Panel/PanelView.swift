@@ -79,7 +79,7 @@ struct PanelView: View {
             Spacer()
             metricToggle
             Button { doRefresh() } label: {
-                Text("⟳").font(.system(size: 14)).foregroundStyle(dc.fg3)
+                Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .regular)).foregroundStyle(dc.fg3)
                     .rotationEffect(.degrees(refreshSpin))
                     .padding(.horizontal, 3).padding(.vertical, 1)
             }
@@ -95,7 +95,7 @@ struct PanelView: View {
         let isCost = store.menuMetric == .cost
         return Button { store.toggleMetric() } label: {
             Image(systemName: isCost ? "dollarsign" : "number")
-                .font(.system(size: 8, weight: .regular)).foregroundStyle(dc.fg3)
+                .font(.system(size: 9, weight: .regular)).foregroundStyle(dc.fg3)
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .contentShape(Rectangle())
         }
