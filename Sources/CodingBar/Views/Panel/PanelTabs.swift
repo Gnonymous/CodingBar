@@ -64,7 +64,7 @@ struct OverviewTab: View {
                 .padding(.top, 7)
 
                 if ov.trend.count >= 3 {
-                    VStack(spacing: 1) {
+                    VStack(spacing: 7) {
                         DCSparkline(values: metric == .cost ? ov.trend.map { $0.cost } : ov.trend.map { Double($0.tokens) })
                         HStack {
                             Text(startLabel)
@@ -74,6 +74,9 @@ struct OverviewTab: View {
                             Text("今日")
                         }
                         .font(.system(size: 9)).foregroundStyle(dc.fg3)
+                        // Match the sparkline's internal horizontal inset (pad = 3) so the
+                        // caption's endpoints line up with the curve, not the section edge.
+                        .padding(.horizontal, 3)
                     }
                     .padding(.top, 11)
                 }
