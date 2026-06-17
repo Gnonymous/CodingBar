@@ -21,6 +21,15 @@ BUNDLE="$ROOT/.build/release/CodingBar_CodingBar.bundle"
 
 cp "$ROOT/Scripts/Info.plist" "$APP/Contents/Info.plist"
 
+# Stamp the version from $CODINGBAR_VERSION when set (CI passes the git tag);
+# local builds keep the value baked into Info.plist.
+if [ -n "${CODINGBAR_VERSION:-}" ]; then
+  VER="${CODINGBAR_VERSION#v}"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VER" "$APP/Contents/Info.plist"
+  echo "▸ stamped version $VER"
+fi
+
 # Ad-hoc sign so Gatekeeper lets it run locally.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (codesign skipped)"
 
