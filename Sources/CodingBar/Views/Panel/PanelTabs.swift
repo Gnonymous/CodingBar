@@ -100,7 +100,7 @@ struct OverviewTab: View {
             // 实时教练
             VStack(alignment: .leading, spacing: 11) {
                 SectionHeader("实时教练")
-                if let f = snap.fuel { FuelGaugeView(fuel: f) }
+                if let f = snap.fuel { FuelGaugeView(fuel: f, active: snap.menu.active) }
                 if let tip { TipBox(tip: tip) }
             }
 

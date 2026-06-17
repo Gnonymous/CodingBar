@@ -147,14 +147,22 @@ struct HeatmapView: View {
 
 struct FuelGaugeView: View {
     let fuel: FuelGauge
+    var active: Bool = true
     private var frac: Double { Double(fuel.usedTokens) / Double(max(fuel.maxTokens, 1)) }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("当前会话上下文").font(.system(size: 12)).foregroundStyle(Theme.dimText)
-                Spacer()
+            HStack(spacing: 6) {
+                // Which session this gauge reflects: the most-recently-written
+                // Claude session. Label "当前"(active) vs "最近"(idle) sets the
+                // expectation when several sessions are open at once.
+                Circle().fill(active ? Theme.quotaGreen : Theme.faintText).frame(width: 6, height: 6)
+                Text(active ? "当前会话" : "最近会话").font(.system(size: 12)).foregroundStyle(Theme.dimText)
+                Text(fuel.sessionName).font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.primaryText).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 8)
                 Text("\(Panel.tokens(fuel.usedTokens)) / \(Panel.tokens(fuel.maxTokens))")
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(Theme.primaryText)
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.primaryText).fixedSize()
             }
             HBar(fraction: frac, color: Theme.quotaColor(1 - frac), height: 6)
             Text("预计还能来回 ~\(fuel.estRemainingTurns) 轮")
