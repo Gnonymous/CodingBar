@@ -6,7 +6,17 @@ public enum Aggregator {
     /// APIs). It is a parameter rather than scanned here so the local-log
     /// aggregation stays synchronous and offline; the UI injects the latest
     /// network-fetched quota each run.
-    public static func run(now: Date = Date(), quota: [QuotaWindow] = []) -> Snapshot {
+    /// Rolling start of the selected range: today = 00:00, week = last 7 days,
+    /// month = last 30 days.
+    static func rangeStart(_ range: Range, todayStart: Date, cal: Calendar) -> Date {
+        switch range {
+        case .today: return todayStart
+        case .week:  return cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
+        case .month: return cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
+        }
+    }
+
+    public static func run(now: Date = Date(), quota: [QuotaWindow] = [], range: Range = .today) -> Snapshot {
         let cal = Calendar.current
 
         // 1. Scan all sources (token/cost/behavior — 100% local)
@@ -19,26 +29,42 @@ public enum Aggregator {
         func isToday(_ date: Date) -> Bool { date >= todayStart && date <= now }
         func dayStart(_ date: Date) -> Date { cal.startOfDay(for: date) }
 
-        // 3. Today's records
+        // 3. Today's records (drive the always-today menu bar + today's coach)
         let todayRecords = allRecords.filter { isToday($0.timestamp) }
-
-        // 4. Overview — spend
         var todayCost: Double = 0
         var todayTokens = TokenBreakdown()
-        var todayCwds = Set<String>()
-
         for r in todayRecords {
-            let c = Pricing.cost(model: r.model, tokens: r.tokens)
-            todayCost += c
+            todayCost += Pricing.cost(model: r.model, tokens: r.tokens)
             todayTokens += r.tokens
-            if !r.cwd.isEmpty { todayCwds.insert(r.cwd) }
         }
 
-        let todaySessions = todayCwds.count
+        // 4. Overview — spend over the SELECTED range (today / last 7d / last 30d)
+        let rStart = Aggregator.rangeStart(range, todayStart: todayStart, cal: cal)
+        let rangeRecords = allRecords.filter { $0.timestamp >= rStart && $0.timestamp <= now }
+        var rangeCost: Double = 0
+        var rangeTokens = TokenBreakdown()
+        var rangeCwdCount: [String: Int] = [:]
+        for r in rangeRecords {
+            rangeCost += Pricing.cost(model: r.model, tokens: r.tokens)
+            rangeTokens += r.tokens
+            if !r.cwd.isEmpty { rangeCwdCount[r.cwd, default: 0] += 1 }
+        }
+        let rangeSessions = rangeCwdCount.count
+        // Most-active cwds first, so the bounded git scan keeps the highest-output
+        // repos (otherwise a longer range could under-count vs today).
+        let rangeCwds = rangeCwdCount.sorted { $0.value > $1.value }.map { $0.key }
 
-        // 5. Trend — last 7 calendar days
+        // Delta vs the previous equal-length period (cost-based).
+        let periodDays = (range == .today) ? 1 : (range == .week ? 7 : 30)
+        let prevStart = cal.date(byAdding: .day, value: -periodDays, to: rStart) ?? rStart
+        var prevCost: Double = 0
+        for r in allRecords where r.timestamp >= prevStart && r.timestamp < rStart {
+            prevCost += Pricing.cost(model: r.model, tokens: r.tokens)
+        }
+        let deltaVsPrevPct = prevCost > 0 ? (rangeCost - prevCost) / prevCost * 100 : 0
+
+        // 5. Trend — last 7 calendar days (always 7d, independent of the range pill)
         var trend: [DayPoint] = []
-        var yesterdayCost: Double = 0
         for dayOffset in (0..<7).reversed() {
             guard let d = cal.date(byAdding: .day, value: -dayOffset, to: todayStart) else { continue }
             let nextDay = cal.date(byAdding: .day, value: 1, to: d) ?? d
@@ -47,20 +73,11 @@ public enum Aggregator {
             for r in allRecords {
                 let ds = dayStart(r.timestamp)
                 if ds >= d && r.timestamp < nextDay {
-                    let c = Pricing.cost(model: r.model, tokens: r.tokens)
-                    dayCost += c
+                    dayCost += Pricing.cost(model: r.model, tokens: r.tokens)
                     dayTotalTokens += r.tokens.total
                 }
             }
             trend.append(DayPoint(date: d, cost: dayCost, tokens: dayTotalTokens))
-            if dayOffset == 1 { yesterdayCost = dayCost }
-        }
-
-        let deltaVsPrevPct: Double
-        if yesterdayCost > 0 {
-            deltaVsPrevPct = (todayCost - yesterdayCost) / yesterdayCost * 100
-        } else {
-            deltaVsPrevPct = 0
         }
 
         // 6. Models — group by normalized model, sort by cost desc
@@ -169,23 +186,25 @@ public enum Aggregator {
         var coach: [Insight] = Coach.build(from: todayRecords)
         if let fi = forecastInsight { coach.append(fi) }
 
-        // Pillar ① — Git output (today's active project cwds)
-        let output = GitCorrelator.build(fromTodayCwds: todayCwds, now: now)
+        // Pillar ① — Git output across the selected range's active project cwds
+        let output = GitCorrelator.build(fromCwds: rangeCwds, since: rStart, now: now)
 
         // ── Assemble ─────────────────────────────────────────────────────────
 
         let menu = MenuSummary(
             metric: .tokens,
             primaryText: primaryText,
+            todayTokens: todayTokens.total,
+            todayCost: todayCost,
             quotaPercent: quotaPercent,
             active: isActive,
             throughput: throughput
         )
 
-        // 10. Overview
+        // 10. Overview (range-aware: today / last 7d / last 30d)
         let overview = Overview(
-            range: .today,
-            spend: PeriodTotals(cost: todayCost, tokens: todayTokens, sessions: todaySessions),
+            range: range,
+            spend: PeriodTotals(cost: rangeCost, tokens: rangeTokens, sessions: rangeSessions),
             output: output,
             deltaVsPrevPct: deltaVsPrevPct,
             trend: trend

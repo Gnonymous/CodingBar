@@ -189,14 +189,20 @@ public struct Habits: Codable, Sendable {
 public enum MenuMetric: String, Codable, Sendable, CaseIterable { case tokens, cost }
 
 /// Everything the menu bar item needs in one place.
+/// The menu bar is ALWAYS today (independent of the panel's range selector), so it
+/// carries its own today totals rather than reading the (range-aware) overview.
 public struct MenuSummary: Codable, Sendable {
     public var metric: MenuMetric
     public var primaryText: String      // e.g. "1.2M" or "$4.20"
+    public var todayTokens: Int         // today's total tokens (menu bar)
+    public var todayCost: Double         // today's total cost (menu bar)
     public var quotaPercent: Double?    // 0...1 remaining, nil if unavailable
     public var active: Bool             // an agent is currently writing
     public var throughput: Double       // tokens/sec, drives the pulse animation
-    public init(metric: MenuMetric, primaryText: String, quotaPercent: Double?, active: Bool, throughput: Double) {
-        self.metric = metric; self.primaryText = primaryText; self.quotaPercent = quotaPercent
+    public init(metric: MenuMetric, primaryText: String, todayTokens: Int = 0, todayCost: Double = 0,
+                quotaPercent: Double?, active: Bool, throughput: Double) {
+        self.metric = metric; self.primaryText = primaryText
+        self.todayTokens = todayTokens; self.todayCost = todayCost; self.quotaPercent = quotaPercent
         self.active = active; self.throughput = throughput
     }
 }

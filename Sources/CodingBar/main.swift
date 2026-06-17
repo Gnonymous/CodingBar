@@ -19,8 +19,13 @@ func fetchQuotaBlocking() -> QuotaBox {
 // data layer against real local logs without launching the GUI.
 if CommandLine.arguments.contains("--dump-json") {
     // Fetch live quota (Claude + Codex usage APIs) then aggregate local data.
+    // Optional `--range week|month` for verifying range-aware aggregation.
     let quota = fetchQuotaBlocking()
-    var snap = Aggregator.run(quota: quota.windows)
+    var range: Range = .today
+    if let i = CommandLine.arguments.firstIndex(of: "--range"), i + 1 < CommandLine.arguments.count {
+        range = Range(rawValue: CommandLine.arguments[i + 1]) ?? .today
+    }
+    var snap = Aggregator.run(quota: quota.windows, range: range)
     snap.quotaNotes = quota.notes
     let enc = JSONEncoder()
     enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

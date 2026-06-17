@@ -24,7 +24,7 @@ struct PanelView: View {
         switch tab {
         case 1: HabitsTab(snap: snap)
         case 2: ProjectsTab(snap: snap)
-        default: OverviewTab(snap: snap)
+        default: OverviewTab(store: store)
         }
     }
 

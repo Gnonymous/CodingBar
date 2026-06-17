@@ -7,18 +7,24 @@ struct PanelDivider: View {
     var body: some View { Rectangle().fill(Theme.hairline).frame(height: 1) }
 }
 
-/// Static visual segmented control (interactive range/metric switching is a polish-phase item).
-struct MiniSeg: View {
+/// Interactive segmented control (range pills, trend metric).
+struct SegToggle: View {
     let options: [String]
-    var selected: Int = 0
+    let selected: Int
+    let onSelect: (Int) -> Void
     var body: some View {
         HStack(spacing: 1) {
             ForEach(Array(options.enumerated()), id: \.offset) { i, o in
-                Text(o)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(i == selected ? Theme.primaryText : Theme.faintText)
-                    .padding(.vertical, 2).padding(.horizontal, 7)
-                    .background(i == selected ? AnyView(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.10))) : AnyView(Color.clear))
+                Button { onSelect(i) } label: {
+                    Text(o)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(i == selected ? Theme.primaryText : Theme.faintText)
+                        .padding(.vertical, 2).padding(.horizontal, 7)
+                        .background(i == selected ? AnyView(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.10))) : AnyView(Color.clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
         }
         .padding(2)
@@ -44,7 +50,9 @@ private struct TipBox: View {
 // MARK: - Overview tab
 
 struct OverviewTab: View {
-    let snap: Snapshot
+    @ObservedObject var store: UsageStore
+    @State private var trendUseCost = true
+    private var snap: Snapshot { store.snapshot }
     private var o: Overview { snap.overview }
     private var tip: Insight? { snap.coach.first { $0.kind == .tip } }
     private var forecast: Insight? { snap.coach.first { $0.kind == .forecast } }
@@ -54,12 +62,18 @@ struct OverviewTab: View {
     private var perCommit: String {
         o.output.commits > 0 ? Panel.money(o.spend.cost / Double(o.output.commits)) : "—"
     }
+    private var rangeIndex: Int { switch store.selectedRange { case .today: 0; case .week: 1; case .month: 2 } }
+    private var rangeWord: String { switch store.selectedRange { case .today: "今日"; case .week: "近7天"; case .month: "近30天" } }
+    private var deltaWord: String { switch store.selectedRange { case .today: "较昨日"; case .week: "较上周"; case .month: "较上月" } }
+    private func setRangeIndex(_ i: Int) { store.setRange(i == 0 ? .today : (i == 1 ? .week : .month)) }
 
     var body: some View {
         VStack(spacing: 15) {
             // Hero: 成果 ↔ 代价
             VStack(spacing: 12) {
-                SectionHeader(title: "今日 · 成果 ↔ 代价") { MiniSeg(options: ["今日","周","月"]) }
+                SectionHeader(title: "\(rangeWord) · 成果 ↔ 代价") {
+                    SegToggle(options: ["今日","周","月"], selected: rangeIndex, onSelect: setRangeIndex)
+                }
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("成果").font(.system(size: 10.5, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(Theme.faintText)
@@ -134,8 +148,10 @@ struct OverviewTab: View {
 
             // 趋势
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(title: "趋势 · 近 7 天") { MiniSeg(options: ["花费","Token"]) }
-                TrendChartView(points: o.trend, useCost: true).frame(height: 88)
+                SectionHeader(title: "趋势 · 近 7 天") {
+                    SegToggle(options: ["花费","Token"], selected: trendUseCost ? 0 : 1) { trendUseCost = ($0 == 0) }
+                }
+                TrendChartView(points: o.trend, useCost: trendUseCost).frame(height: 88)
             }
         }
         .padding(.horizontal, Panel.hPad).padding(.top, 14).padding(.bottom, 16)
@@ -156,7 +172,7 @@ struct OverviewTab: View {
         let up = o.deltaVsPrevPct >= 0
         return HStack(spacing: 2) {
             Image(systemName: up ? "arrow.up" : "arrow.down").font(.system(size: 9, weight: .bold))
-            Text("\(Int(abs(o.deltaVsPrevPct).rounded()))% 较昨日").font(.system(size: 12))
+            Text("\(Int(abs(o.deltaVsPrevPct).rounded()))% \(deltaWord)").font(.system(size: 12))
         }.foregroundStyle(Theme.faintText)
     }
     private func effItem(_ v: String, _ unit: String) -> some View {

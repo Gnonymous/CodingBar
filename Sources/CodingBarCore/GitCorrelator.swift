@@ -85,23 +85,22 @@ enum GitCorrelator {
 
     // MARK: - Entry point
 
-    /// Accumulate today's git output across the top cwds seen in today's records.
-    static func build(fromTodayCwds cwds: Set<String>, now: Date) -> OutputStat {
-        // today 00:00 local, formatted as "YYYY-MM-DD 00:00:00"
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: now)
+    /// Accumulate git output across the given cwds since `since` (range start).
+    /// `cwds` should be ordered most-active first; only the top few are checked to
+    /// bound latency, so passing them activity-sorted keeps the result meaningful.
+    static func build(fromCwds cwds: [String], since: Date, now: Date) -> OutputStat {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
         fmt.locale = Locale(identifier: "en_US_POSIX")
-        let sinceStr = fmt.string(from: todayStart)
+        let sinceStr = fmt.string(from: since)
 
         var totalAdded = 0
         var totalRemoved = 0
         var totalCommits = 0
         var totalFiles = Set<String>()
 
-        // Only check up to 6 cwds to keep latency bounded
-        for cwd in cwds.prefix(6) {
+        // Only check up to 10 cwds (most-active first) to keep latency bounded
+        for cwd in cwds.prefix(10) {
             guard !cwd.isEmpty,
                   FileManager.default.fileExists(atPath: cwd) else { continue }
             let s = stats(for: cwd, todaySinceStr: sinceStr)

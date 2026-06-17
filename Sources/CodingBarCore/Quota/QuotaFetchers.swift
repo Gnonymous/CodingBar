@@ -10,10 +10,12 @@ import Foundation
 
 public struct QuotaFetchResult: Sendable {
     public var windows: [QuotaWindow]
-    public var note: String?   // degradation message for the UI, nil on success
-    public init(windows: [QuotaWindow] = [], note: String? = nil) {
+    public var note: String?    // degradation message for the UI, nil on success
+    public var authFailed: Bool // true for 401/403/expired — won't recover on its own
+    public init(windows: [QuotaWindow] = [], note: String? = nil, authFailed: Bool = false) {
         self.windows = windows
         self.note = note
+        self.authFailed = authFailed
     }
 }
 
@@ -66,7 +68,7 @@ public struct ClaudeQuotaFetcher: Sendable {
             return QuotaFetchResult(note: credential.status == .parseError ? credential.message : nil)
         }
         if credential.status == .expired {
-            return QuotaFetchResult(note: credential.message ?? "Claude Code 需要重新登录")
+            return QuotaFetchResult(note: credential.message ?? "Claude Code 需要重新登录", authFailed: true)
         }
 
         guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else {
@@ -81,7 +83,7 @@ public struct ClaudeQuotaFetcher: Sendable {
             return QuotaFetchResult(note: "Claude 用量读取失败")
         }
         if status == 401 || status == 403 {
-            return QuotaFetchResult(note: "Claude Code 需要重新登录")
+            return QuotaFetchResult(note: "Claude Code 需要重新登录", authFailed: true)
         }
         guard (200..<300).contains(status) else {
             return QuotaFetchResult(note: "Claude 用量接口错误 HTTP \(status)")
@@ -144,7 +146,7 @@ public struct CodexQuotaFetcher: Sendable {
             return QuotaFetchResult(note: credential.status == .parseError ? credential.message : nil)
         }
         if credential.status == .expired {
-            return QuotaFetchResult(note: credential.message ?? "Codex 需要重新登录")
+            return QuotaFetchResult(note: credential.message ?? "Codex 需要重新登录", authFailed: true)
         }
 
         guard let url = URL(string: "https://chatgpt.com/backend-api/wham/usage") else {
@@ -162,7 +164,7 @@ public struct CodexQuotaFetcher: Sendable {
             return QuotaFetchResult(note: "Codex 用量读取失败")
         }
         if status == 401 || status == 403 {
-            return QuotaFetchResult(note: "Codex 需要重新登录")
+            return QuotaFetchResult(note: "Codex 需要重新登录", authFailed: true)
         }
         guard (200..<300).contains(status) else {
             return QuotaFetchResult(note: "Codex 用量接口错误 HTTP \(status)")

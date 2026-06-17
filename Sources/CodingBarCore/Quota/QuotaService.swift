@@ -21,6 +21,10 @@ public actor QuotaService {
 
     private let cacheTTL: TimeInterval
     private let failureTTL: TimeInterval
+    // Last *successful* windows per provider, so a transient failure (429, 5xx,
+    // network blip) keeps showing the previous reading instead of blanking out.
+    private var lastClaude: [QuotaWindow] = []
+    private var lastCodex: [QuotaWindow] = []
     private var cachedWindows: [QuotaWindow] = []
     private var cachedNotes: [String] = []
     private var lastFetch: Date?
@@ -42,18 +46,35 @@ public actor QuotaService {
         async let codex = CodexQuotaFetcher().fetch(now: now)
         let (c, x) = await (claude, codex)
 
-        // Claude windows first, then Codex (panel renders them grouped in order).
-        let windows = c.windows + x.windows
-        let notes = [c.note, x.note].compactMap { $0 }
+        var notes: [String] = []
+        // Claude first, then Codex (panel renders them grouped in order).
+        let claudeWindows = merge(c, into: &lastClaude, notes: &notes)
+        let codexWindows = merge(x, into: &lastCodex, notes: &notes)
 
-        cachedWindows = windows
+        cachedWindows = claudeWindows + codexWindows
         cachedNotes = notes
         lastFetch = now
-        return Result(windows: windows, notes: notes)
+        return Result(windows: cachedWindows, notes: notes)
     }
 
-    /// Shorter retry window when the last fetch yielded nothing (likely a
-    /// transient failure or missing credential), full TTL once we have data.
+    /// Resolve one provider's fetch against its last-good cache:
+    /// - success (non-empty) → adopt and remember it
+    /// - auth failure (401/403/expired) → drop the stale data and surface the note
+    /// - transient failure → keep the last-good silently (only surface a note if we
+    ///   have nothing cached yet)
+    private func merge(_ result: QuotaFetchResult, into last: inout [QuotaWindow], notes: inout [String]) -> [QuotaWindow] {
+        if !result.windows.isEmpty {
+            last = result.windows
+        } else if result.authFailed {
+            last = []
+            if let n = result.note { notes.append(n) }
+        } else if last.isEmpty, let n = result.note {
+            notes.append(n)
+        }
+        return last
+    }
+
+    /// Shorter retry window only when we have *nothing* cached at all.
     private func ttl() -> TimeInterval {
         cachedWindows.isEmpty ? failureTTL : cacheTTL
     }
