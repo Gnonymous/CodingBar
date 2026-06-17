@@ -211,7 +211,10 @@ public struct MenuSummary: Codable, Sendable {
 public struct Snapshot: Codable, Sendable {
     public var generatedAt: Date
     public var menu: MenuSummary
-    public var overview: Overview
+    public var overview: Overview            // today (menu/default)
+    /// All three ranges precomputed (today / week / month) so the panel switches
+    /// instantly and consistently. The UI picks by the user's selected range.
+    public var overviews: [Overview]
     public var habits: Habits
     public var projects: [ProjectStat]
     public var models: [ModelStat]
@@ -225,9 +228,10 @@ public struct Snapshot: Codable, Sendable {
     public init(generatedAt: Date, menu: MenuSummary, overview: Overview, habits: Habits,
                 projects: [ProjectStat], models: [ModelStat], cache: CacheStat,
                 quota: [QuotaWindow], coach: [Insight], fuel: FuelGauge?,
-                quotaNotes: [String] = []) {
+                quotaNotes: [String] = [], overviews: [Overview] = []) {
         self.generatedAt = generatedAt; self.menu = menu; self.overview = overview; self.habits = habits
         self.projects = projects; self.models = models; self.cache = cache; self.quota = quota
         self.coach = coach; self.fuel = fuel; self.quotaNotes = quotaNotes
+        self.overviews = overviews.isEmpty ? [overview] : overviews
     }
 }

@@ -30,20 +30,19 @@ final class UsageStore: ObservableObject {
         menuMetric = (menuMetric == .tokens) ? .cost : .tokens
     }
 
-    /// Switch the overview range (今日 / 周 / 月) and re-aggregate.
+    /// Switch the overview range (今日 / 周 / 月). All three are precomputed in the
+    /// snapshot, so this is instant and the hero stays internally consistent — no
+    /// recompute, no async race between 成果 and 代价.
     func setRange(_ range: Range) {
-        guard range != selectedRange else { return }
         selectedRange = range
-        refresh()
     }
 
     /// Re-aggregate local logs (fast, offline). Reuses the last-known quota.
     func refresh() {
         let q = quotaWindows
         let notes = quotaNotes
-        let range = selectedRange
         Task.detached(priority: .userInitiated) {
-            var snap = Aggregator.run(quota: q, range: range)
+            var snap = Aggregator.run(quota: q)
             snap.quotaNotes = notes
             let result = snap
             await MainActor.run { self.snapshot = result }

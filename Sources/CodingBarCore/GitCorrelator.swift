@@ -47,74 +47,63 @@ enum GitCorrelator {
         return result?.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
 
-    // MARK: - Per-repo stats
+    // MARK: - Multi-range output (one git pass per repo, bucketed by commit time)
 
-    private static func stats(for cwd: String, todaySinceStr: String) -> (added: Int, removed: Int, commits: Int, files: Set<String>) {
-        guard isGitRepo(at: cwd) else { return (0, 0, 0, []) }
-
-        // Commit count
-        let commitCountStr = run(args: ["-C", cwd, "rev-list", "--count",
-                                        "--since=\(todaySinceStr)", "HEAD"], timeout: 5.0) ?? ""
-        let commits = Int(commitCountStr.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-
-        // Numstat for line additions/deletions and unique files
-        let numstat = run(args: ["-C", cwd, "log",
-                                 "--since=\(todaySinceStr)",
-                                 "--numstat",
-                                 "--pretty=tformat:"], timeout: 5.0) ?? ""
-
-        var added = 0
-        var removed = 0
-        var files = Set<String>()
-
-        for line in numstat.components(separatedBy: "\n") {
-            let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard parts.count == 3 else { continue }
-            let addStr = String(parts[0]).trimmingCharacters(in: .whitespaces)
-            let delStr = String(parts[1]).trimmingCharacters(in: .whitespaces)
-            let file  = String(parts[2]).trimmingCharacters(in: .whitespaces)
-
-            // Binary files show "-" for add/remove counts
-            if addStr != "-", let a = Int(addStr) { added += a }
-            if delStr != "-", let d = Int(delStr) { removed += d }
-            if !file.isEmpty { files.insert(file) }
-        }
-
-        return (added, removed, commits, files)
+    public struct RangeOutputs: Sendable {
+        public var today: OutputStat
+        public var week: OutputStat
+        public var month: OutputStat
     }
 
-    // MARK: - Entry point
-
-    /// Accumulate git output across the given cwds since `since` (range start).
-    /// `cwds` should be ordered most-active first; only the top few are checked to
-    /// bound latency, so passing them activity-sorted keeps the result meaningful.
-    static func build(fromCwds cwds: [String], since: Date, now: Date) -> OutputStat {
+    /// One `git log` per repo over the last 30 days (with commit timestamps), then
+    /// bucket additions/deletions/commits/files into today / last-7d / last-30d
+    /// (cumulative). Computing all three together keeps the panel ranges instant
+    /// AND mutually consistent — no per-tap recompute, no async race.
+    /// `cwds` should be most-active first; only the top 10 are scanned for latency.
+    static func buildRanges(cwds: [String], now: Date) -> RangeOutputs {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: now)
+        let todayStart = dayStart.timeIntervalSince1970
+        let weekStart  = (cal.date(byAdding: .day, value: -6, to: dayStart) ?? dayStart).timeIntervalSince1970
+        let monthStartDate = cal.date(byAdding: .day, value: -29, to: dayStart) ?? dayStart
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
         fmt.locale = Locale(identifier: "en_US_POSIX")
-        let sinceStr = fmt.string(from: since)
+        let sinceStr = fmt.string(from: monthStartDate)
 
-        var totalAdded = 0
-        var totalRemoved = 0
-        var totalCommits = 0
-        var totalFiles = Set<String>()
+        var tA = 0, tR = 0, tC = 0; var tF = Set<String>()
+        var wA = 0, wR = 0, wC = 0; var wF = Set<String>()
+        var mA = 0, mR = 0, mC = 0; var mF = Set<String>()
 
-        // Only check up to 10 cwds (most-active first) to keep latency bounded
         for cwd in cwds.prefix(10) {
-            guard !cwd.isEmpty,
-                  FileManager.default.fileExists(atPath: cwd) else { continue }
-            let s = stats(for: cwd, todaySinceStr: sinceStr)
-            totalAdded += s.added
-            totalRemoved += s.removed
-            totalCommits += s.commits
-            s.files.forEach { totalFiles.insert($0) }
+            guard !cwd.isEmpty, FileManager.default.fileExists(atPath: cwd), isGitRepo(at: cwd) else { continue }
+            // "@<unix-ts>" header before each commit, then its numstat rows.
+            let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)",
+                                 "--numstat", "--pretty=format:@%ct"], timeout: 6.0) ?? ""
+            var ts: Double = 0
+            for line in out.components(separatedBy: "\n") {
+                if line.hasPrefix("@") {
+                    ts = Double(line.dropFirst()) ?? 0
+                    mC += 1
+                    if ts >= weekStart { wC += 1 }
+                    if ts >= todayStart { tC += 1 }
+                    continue
+                }
+                let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
+                guard parts.count == 3 else { continue }
+                let add = Int(parts[0].trimmingCharacters(in: .whitespaces)) ?? 0  // "-" (binary) → 0
+                let rem = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
+                let file = String(parts[2].trimmingCharacters(in: .whitespaces))
+                let key = cwd + "/" + file
+                mA += add; mR += rem; if !file.isEmpty { mF.insert(key) }
+                if ts >= weekStart  { wA += add; wR += rem; if !file.isEmpty { wF.insert(key) } }
+                if ts >= todayStart { tA += add; tR += rem; if !file.isEmpty { tF.insert(key) } }
+            }
         }
-
-        return OutputStat(
-            added: totalAdded,
-            removed: totalRemoved,
-            commits: totalCommits,
-            files: totalFiles.count
+        return RangeOutputs(
+            today: OutputStat(added: tA, removed: tR, commits: tC, files: tF.count),
+            week:  OutputStat(added: wA, removed: wR, commits: wC, files: wF.count),
+            month: OutputStat(added: mA, removed: mR, commits: mC, files: mF.count)
         )
     }
 }

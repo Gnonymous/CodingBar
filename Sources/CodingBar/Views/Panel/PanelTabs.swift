@@ -53,7 +53,8 @@ struct OverviewTab: View {
     @ObservedObject var store: UsageStore
     @State private var trendUseCost = true
     private var snap: Snapshot { store.snapshot }
-    private var o: Overview { snap.overview }
+    // The overview for the selected range, from the precomputed set (instant switch).
+    private var o: Overview { snap.overviews.first { $0.range == store.selectedRange } ?? snap.overview }
     private var tip: Insight? { snap.coach.first { $0.kind == .tip } }
     private var forecast: Insight? { snap.coach.first { $0.kind == .forecast } }
     private var perLine: String {

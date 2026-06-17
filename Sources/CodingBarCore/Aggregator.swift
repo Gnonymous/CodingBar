@@ -5,18 +5,8 @@ public enum Aggregator {
     /// `quota` is supplied by the online `QuotaService` (Claude + Codex usage
     /// APIs). It is a parameter rather than scanned here so the local-log
     /// aggregation stays synchronous and offline; the UI injects the latest
-    /// network-fetched quota each run.
-    /// Rolling start of the selected range: today = 00:00, week = last 7 days,
-    /// month = last 30 days.
-    static func rangeStart(_ range: Range, todayStart: Date, cal: Calendar) -> Date {
-        switch range {
-        case .today: return todayStart
-        case .week:  return cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
-        case .month: return cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
-        }
-    }
-
-    public static func run(now: Date = Date(), quota: [QuotaWindow] = [], range: Range = .today) -> Snapshot {
+    /// network-fetched quota each run. All three overview ranges are precomputed.
+    public static func run(now: Date = Date(), quota: [QuotaWindow] = []) -> Snapshot {
         let cal = Calendar.current
 
         // 1. Scan all sources (token/cost/behavior — 100% local)
@@ -38,30 +28,31 @@ public enum Aggregator {
             todayTokens += r.tokens
         }
 
-        // 4. Overview — spend over the SELECTED range (today / last 7d / last 30d)
-        let rStart = Aggregator.rangeStart(range, todayStart: todayStart, cal: cal)
-        let rangeRecords = allRecords.filter { $0.timestamp >= rStart && $0.timestamp <= now }
-        var rangeCost: Double = 0
-        var rangeTokens = TokenBreakdown()
-        var rangeCwdCount: [String: Int] = [:]
-        for r in rangeRecords {
-            rangeCost += Pricing.cost(model: r.model, tokens: r.tokens)
-            rangeTokens += r.tokens
-            if !r.cwd.isEmpty { rangeCwdCount[r.cwd, default: 0] += 1 }
-        }
-        let rangeSessions = rangeCwdCount.count
-        // Most-active cwds first, so the bounded git scan keeps the highest-output
-        // repos (otherwise a longer range could under-count vs today).
-        let rangeCwds = rangeCwdCount.sorted { $0.value > $1.value }.map { $0.key }
+        // 4. Overview — precompute ALL three ranges so the panel switches instantly
+        //    and stays internally consistent (成果 + 代价 always from one range).
+        let weekStart  = cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
+        let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
 
-        // Delta vs the previous equal-length period (cost-based).
-        let periodDays = (range == .today) ? 1 : (range == .week ? 7 : 30)
-        let prevStart = cal.date(byAdding: .day, value: -periodDays, to: rStart) ?? rStart
-        var prevCost: Double = 0
-        for r in allRecords where r.timestamp >= prevStart && r.timestamp < rStart {
-            prevCost += Pricing.cost(model: r.model, tokens: r.tokens)
+        func spend(since start: Date) -> (cost: Double, tokens: TokenBreakdown, cwds: [String: Int]) {
+            var c: Double = 0; var t = TokenBreakdown(); var cw: [String: Int] = [:]
+            for r in allRecords where r.timestamp >= start && r.timestamp <= now {
+                c += Pricing.cost(model: r.model, tokens: r.tokens)
+                t += r.tokens
+                if !r.cwd.isEmpty { cw[r.cwd, default: 0] += 1 }
+            }
+            return (c, t, cw)
         }
-        let deltaVsPrevPct = prevCost > 0 ? (rangeCost - prevCost) / prevCost * 100 : 0
+        func cost(from a: Date, to b: Date) -> Double {
+            var c: Double = 0
+            for r in allRecords where r.timestamp >= a && r.timestamp < b { c += Pricing.cost(model: r.model, tokens: r.tokens) }
+            return c
+        }
+
+        // Git output for all ranges in one pass per repo, scanning the most-active
+        // cwds over the widest (month) window.
+        let monthSpend = spend(since: monthStart)
+        let monthCwds = monthSpend.cwds.sorted { $0.value > $1.value }.map { $0.key }
+        let gitRanges = GitCorrelator.buildRanges(cwds: monthCwds, now: now)
 
         // 5. Trend — last 7 calendar days (always 7d, independent of the range pill)
         var trend: [DayPoint] = []
@@ -186,9 +177,6 @@ public enum Aggregator {
         var coach: [Insight] = Coach.build(from: todayRecords)
         if let fi = forecastInsight { coach.append(fi) }
 
-        // Pillar ① — Git output across the selected range's active project cwds
-        let output = GitCorrelator.build(fromCwds: rangeCwds, since: rStart, now: now)
-
         // ── Assemble ─────────────────────────────────────────────────────────
 
         let menu = MenuSummary(
@@ -201,26 +189,40 @@ public enum Aggregator {
             throughput: throughput
         )
 
-        // 10. Overview (range-aware: today / last 7d / last 30d)
-        let overview = Overview(
-            range: range,
-            spend: PeriodTotals(cost: rangeCost, tokens: rangeTokens, sessions: rangeSessions),
-            output: output,
-            deltaVsPrevPct: deltaVsPrevPct,
-            trend: trend
-        )
+        // 10. Overviews — one per range (today / last 7d / last 30d)
+        func makeOverview(_ range: Range, start: Date, output: OutputStat) -> Overview {
+            let s = spend(since: start)
+            let periodDays = (range == .today) ? 1 : (range == .week ? 7 : 30)
+            let prevStart = cal.date(byAdding: .day, value: -periodDays, to: start) ?? start
+            let prev = cost(from: prevStart, to: start)
+            let delta = prev > 0 ? (s.cost - prev) / prev * 100 : 0
+            return Overview(
+                range: range,
+                spend: PeriodTotals(cost: s.cost, tokens: s.tokens, sessions: s.cwds.count),
+                output: output,
+                deltaVsPrevPct: delta,
+                trend: trend
+            )
+        }
+        let overviewToday = makeOverview(.today, start: todayStart, output: gitRanges.today)
+        let overviews = [
+            overviewToday,
+            makeOverview(.week,  start: weekStart,  output: gitRanges.week),
+            makeOverview(.month, start: monthStart, output: gitRanges.month),
+        ]
 
         return Snapshot(
             generatedAt: now,
             menu: menu,
-            overview: overview,
+            overview: overviewToday,
             habits: habits,
             projects: projects,
             models: models,
             cache: cache,
             quota: quota,
             coach: coach,
-            fuel: fuelGauge
+            fuel: fuelGauge,
+            overviews: overviews
         )
     }
 }
