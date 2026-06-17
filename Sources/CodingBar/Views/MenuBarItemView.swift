@@ -43,36 +43,44 @@ struct MenuBarItemView: View {
     }
 
     // `pct` is the remaining fraction of the menu window (Claude 5h). We render
-    // it as *used %* per user preference; the bar fills with usage and is colored
-    // by health (low usage = green, high usage = red).
+    // it as *used %* per user preference; the 4-cell meter lights up with usage
+    // and is colored by health (low usage = green, high usage = red). The row is
+    // trailing-anchored to the number's width so the meter's right edge always
+    // lines up with the number above and never overflows to the right.
     private func line2(pct: Double) -> some View {
         let used = 1 - pct
-        return HStack(spacing: 0) {
+        return HStack(spacing: 3) {
             Text("\(Int((used * 100).rounded()))%")
                 .font(Theme.menuBarFont)
                 .foregroundStyle(Color(nsColor: .labelColor).opacity(0.6))
                 .fixedSize()
             Spacer(minLength: 2)
-            QuotaBarView(used: used, health: pct, colorScheme: colorScheme)
+            // Pull in by the monospaced glyph's trailing side-bearing (~1pt) so the
+            // meter's right edge sits on the number's ink, not its layout box.
+            QuotaSegMeter(used: used, health: pct, colorScheme: colorScheme)
+                .padding(.trailing, 1)
         }
+        .frame(width: max(line1Width, 1), alignment: .trailing)
     }
 }
 
-// MARK: - Vertical quota bar (3pt wide, 11pt tall, fills from bottom with usage)
-private struct QuotaBarView: View {
-    let used: Double      // fill height
-    let health: Double    // remaining fraction → color
+// MARK: - 4-cell quota meter (vertical segments, lit by usage, health-colored)
+private struct QuotaSegMeter: View {
+    let used: Double      // 0…1 used fraction → number of lit cells
+    let health: Double    // remaining fraction → fill color
     let colorScheme: ColorScheme
 
+    private let cells = 4
+    private var lit: Int { min(cells, max(0, Int((used * Double(cells)).rounded()))) }
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Theme.quotaTrack(scheme: colorScheme))
-                .frame(width: 3, height: 11)
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Theme.quotaColor(health))
-                .frame(width: 3, height: max(11 * used, 1.5))
+        HStack(spacing: 1.3) {
+            ForEach(0..<cells, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 0.8)
+                    .fill(i < lit ? Theme.quotaColor(health) : Theme.quotaTrack(scheme: colorScheme))
+                    .frame(width: 2, height: 11)
+            }
         }
-        .frame(width: 3, height: 11)
+        .fixedSize()
     }
 }
