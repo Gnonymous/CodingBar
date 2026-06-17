@@ -88,16 +88,14 @@ struct PanelView: View {
         .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
     }
 
-    /// Metric toggle (花费 ⇄ Token) — a bare glyph styled like the refresh button,
-    /// kept muted so it reads as a quiet affordance, not a loud control. The glyph
-    /// shows the *current* metric; tapping flips both the panel and the menu bar.
+    /// Metric toggle (花费 ⇄ Token) — same size / weight / color / padding as the
+    /// refresh button so the two read as a matched pair. The icon shows the
+    /// *current* metric; tapping flips both the panel and the menu bar.
     private var metricToggle: some View {
         let isCost = store.menuMetric == .cost
         return Button { store.toggleMetric() } label: {
-            Text(isCost ? "$" : "#")
-                .font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                .foregroundStyle(dc.fg2)
-                .frame(width: 13)
+            Image(systemName: isCost ? "dollarsign" : "number")
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(dc.fg3)
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .contentShape(Rectangle())
         }
