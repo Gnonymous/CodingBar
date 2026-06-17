@@ -69,7 +69,7 @@ struct OverviewTab: View {
                         HStack {
                             Text(startLabel)
                             Spacer()
-                            Text("\(ov.spend.sessions) 个会话 · \(rangeLabel)")
+                            gitCaption
                             Spacer()
                             Text("今日")
                         }
@@ -102,6 +102,13 @@ struct OverviewTab: View {
 
     private var startLabel: String { ov.trend.first.map { md($0.date) } ?? "" }
     private func md(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "M/d"; return f.string(from: d) }
+
+    /// Git change summary under the sparkline: +added (green) −removed (red) · N commit.
+    private var gitCaption: Text {
+        Text("+\(Panel.int(ov.output.added))").foregroundStyle(dc.good).fontWeight(.medium)
+            + Text(" −\(Panel.int(ov.output.removed))").foregroundStyle(dc.bad).fontWeight(.medium)
+            + Text(" · \(ov.output.commits) commit").foregroundStyle(dc.fg3)
+    }
 
     private var projection: String {
         switch metric {
