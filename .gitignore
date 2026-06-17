@@ -16,10 +16,11 @@ dist/
 /keyStats/
 /tokei/
 
-# Playwright / mockup scratch
+# Playwright scratch
 .playwright-mcp/
-mockups/.playwright-mcp/
 *verify*.png
 
-# Brainstorming visual-companion scratch
+# Internal design material — kept locally, never published
+/mockups/
+/docs/superpowers/
 .superpowers/

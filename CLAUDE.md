@@ -39,6 +39,6 @@ Two SwiftPM targets, data layer fully decoupled from UI:
 - **Git attribution is approximate** (changes in the session's cwd within its time window), and the code labels it as such. Keep it honest.
 - **Releases are ad-hoc signed** (no paid Developer ID). `Scripts/package.sh` assembles the `.app` and accepts `CODINGBAR_VERSION` to stamp `Info.plist` (CI passes the git tag).
 
-## Design source of truth
+## Design
 
-`mockups/` (notably `menubar-numbers-v4.html`, `panel-02.html`) and `docs/superpowers/specs/2026-06-17-codingbar-design.md` are the visual/UX truth. `Theme.swift` color tokens map to design-spec sections.
+Design tokens live in `Theme.swift` (`DCTheme` for the panel, `Theme` for the menu bar). Rendered reference screenshots are in `docs/assets/` (regenerate with `swift run CodingBar --render-panel <png> <tab> [light|dark] [scenario] [cost|tokens]`).

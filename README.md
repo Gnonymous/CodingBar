@@ -81,8 +81,6 @@ Click the menu-bar item for a three-tab panel:
 - **Composition** (构成) — where the money went: spend by model and by project.
 - **Insights** (洞察) — code output, your tool-use mix, a golden-hours heatmap, plus savings tips and a quota-depletion forecast.
 
-The design source of truth lives in `mockups/` (`menubar-numbers-v4.html`, `panel-02.html`).
-
 ## Privacy
 
 - **Usage / cost / behavior / git** — 100% local and offline. Reads only `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`. The price table (`Sources/CodingBar/Resources/pricing.json`) is user-editable.

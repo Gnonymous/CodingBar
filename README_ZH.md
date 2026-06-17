@@ -81,8 +81,6 @@ make package    # 产出 dist/CodingBar.app
 - **构成**（Composition）— 钱花在哪：按模型与按项目的花费拆解。
 - **洞察**（Insights）— 代码产出、工具使用占比、黄金时段热力图，以及省钱提示与额度燃尽预测。
 
-设计真源见 `mockups/`（`menubar-numbers-v4.html`、`panel-02.html`）。
-
 ## 隐私
 
 - **用量 / 成本 / 行为 / git** — 100% 本地、离线。只读取 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`。价格表（`Sources/CodingBar/Resources/pricing.json`）用户可改。
