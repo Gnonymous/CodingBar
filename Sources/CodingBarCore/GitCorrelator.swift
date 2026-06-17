@@ -1,10 +1,6 @@
 import Foundation
 
-// MARK: - Git correlator: approximate today's code output from local git repos.
-
 enum GitCorrelator {
-
-    // MARK: - Process helper with timeout
 
     /// Run a git command with a hard timeout. Returns stdout or nil on failure/timeout.
     private static func run(args: [String], timeout: TimeInterval = 5.0) -> String? {
@@ -19,7 +15,6 @@ enum GitCorrelator {
         do { try proc.run() } catch { return nil }
 
         // Wait with timeout using a background thread
-        var output: String? = nil
         let deadline = DispatchTime.now() + timeout
         let group = DispatchGroup()
         group.enter()
@@ -36,18 +31,13 @@ enum GitCorrelator {
         guard proc.terminationStatus == 0 else { return nil }
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        output = String(data: data, encoding: .utf8)
-        return output
+        return String(data: data, encoding: .utf8)
     }
-
-    // MARK: - Check if a directory is a git repo
 
     private static func isGitRepo(at path: String) -> Bool {
         let result = run(args: ["-C", path, "rev-parse", "--is-inside-work-tree"], timeout: 3.0)
         return result?.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
-
-    // MARK: - Multi-range output (one git pass per repo, bucketed by commit time)
 
     public struct RangeOutputs: Sendable {
         public var today: OutputStat

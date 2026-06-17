@@ -21,8 +21,6 @@ public enum CodexScanner {
         }
     }
 
-    // MARK: - File parsing (for Scanner cache)
-
     static func parseFile(_ fileURL: URL) -> [RawRecord] {
         guard fileURL.lastPathComponent.hasPrefix("rollout-") else { return [] }
         guard let data = try? Data(contentsOf: fileURL),
@@ -79,10 +77,8 @@ public enum CodexScanner {
                 let outputTokens    = lastUsage["output_tokens"] as? Int ?? 0
                 let reasoningTokens = lastUsage["reasoning_output_tokens"] as? Int ?? 0
 
-                // Only accumulate non-zero turns
                 guard inputTokens + outputTokens > 0 else { continue }
 
-                // Extract timestamp (try from obj first, then payload)
                 var timestamp = Date()
                 if let tsStr = obj["timestamp"] as? String ?? payload["timestamp"] as? String {
                     timestamp = iso.date(from: tsStr) ?? Date()
@@ -99,7 +95,6 @@ public enum CodexScanner {
                     reasoning: reasoningTokens
                 )
 
-                // Update model from turn_context seen so far (may be "unknown" initially)
                 let record = RawRecord(
                     provider: .codex,
                     model: model,
@@ -121,8 +116,6 @@ public enum CodexScanner {
 
         return records
     }
-
-    // MARK: - Helpers
 
     private static func makeISO8601Formatter() -> ISO8601DateFormatter {
         let f = ISO8601DateFormatter()

@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - CodingBar design token system
 // Matches mockups/menubar-numbers-v4.html and docs/superpowers/specs/2026-06-17-codingbar-design.md §6.3
 enum Theme {
     // Brand

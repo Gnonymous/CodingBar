@@ -2,7 +2,6 @@ import Foundation
 import SwiftUI
 import CodingBarCore
 
-// MARK: - Central UI state holder.
 // Runs Aggregator.run() off the main actor and publishes on main.
 @MainActor
 final class UsageStore: ObservableObject {
@@ -44,8 +43,7 @@ final class UsageStore: ObservableObject {
         Task.detached(priority: .userInitiated) {
             var snap = Aggregator.run(quota: q)
             snap.quotaNotes = notes
-            let result = snap
-            await MainActor.run { self.snapshot = result }
+            await MainActor.run { [snap] in self.snapshot = snap }
         }
     }
 

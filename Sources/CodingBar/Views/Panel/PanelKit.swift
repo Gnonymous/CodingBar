@@ -96,7 +96,7 @@ struct DCSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             if topBorder { Rectangle().fill(dc.sep).frame(height: 1) }
             VStack(alignment: .leading, spacing: 0) { content }
-                .padding(.horizontal, 13)
+                .padding(.horizontal, Panel.hPad)
                 .padding(.top, 12)
                 .padding(.bottom, bottomPad)
                 .frame(maxWidth: .infinity, alignment: .leading)

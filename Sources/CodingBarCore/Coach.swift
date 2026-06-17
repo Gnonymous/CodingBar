@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Coach pillar: 0–3 cost-saving tips from today's Claude usage.
-
 enum Coach {
 
     // Canonical keys for Opus and Haiku pricing families
@@ -19,13 +17,9 @@ enum Coach {
         record.toolNames.count <= 1 && record.tokens.output < 300
     }
 
-    // MARK: - Tip 1: Opus on simple tasks
-
     static func opusOnSimpleTip(from todayRecords: [RawRecord]) -> Insight? {
         let claudeToday = todayRecords.filter { $0.provider == .claude }
 
-        // Collect simple turns on Opus-class models
-        // "Simple": ≤1 tool call and <300 output tokens
         // Cost delta: only count the non-cached input (cache tokens are already cheap
         // regardless of model — switching models won't help much there).
         var totalSimpleNetInput = 0   // non-cached input tokens only
@@ -37,7 +31,7 @@ enum Coach {
             let key = Pricing.normalize(model: r.model)
             guard opusKeys.contains(key) else { continue }
             guard isSimpleTurn(r) else { continue }
-            totalSimpleNetInput += r.tokens.input   // non-cached input
+            totalSimpleNetInput += r.tokens.input
             totalSimpleCacheRead += r.tokens.cacheRead
             totalSimpleOutput += r.tokens.output
             count += 1
@@ -66,8 +60,6 @@ enum Coach {
         return Insight(kind: .tip, text: text, savingUSD: totalSaved)
     }
 
-    // MARK: - Tip 2: Cache waste (high write:read ratio)
-
     static func cacheWasteTip(from todayRecords: [RawRecord]) -> Insight? {
         let claudeToday = todayRecords.filter { $0.provider == .claude }
 
@@ -83,7 +75,7 @@ enum Coach {
             let writePrice = Pricing.inputPrice(forCanonicalKey: key)    // creation ≈ input price
             let readPrice = Pricing.cacheReadPrice(forCanonicalKey: key)
             totalWriteCost += Double(r.tokens.cacheWrite) * writePrice / 1_000_000
-            totalReadSavings += Double(r.tokens.cacheRead) * (Pricing.inputPrice(forCanonicalKey: key) - readPrice) / 1_000_000
+            totalReadSavings += Double(r.tokens.cacheRead) * (writePrice - readPrice) / 1_000_000
         }
 
         // Flag: wrote lots of cache but read very little (< 20% of writes re-used)
@@ -99,8 +91,6 @@ enum Coach {
                           totalRead / 1000)
         return Insight(kind: .tip, text: text)
     }
-
-    // MARK: - Entry point
 
     static func build(from todayRecords: [RawRecord]) -> [Insight] {
         var tips: [Insight] = []

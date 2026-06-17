@@ -63,8 +63,6 @@ public enum Pricing {
         return m
     }()
 
-    // MARK: - Public API
-
     /// Returns the canonical pricing key for a raw model string.
     public static func normalize(model: String) -> String {
         let lower = model.lowercased()

@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Drives periodic refresh of UsageStore. Start on the main thread; stop() is idempotent.
+// MARK: - Start on the main thread; stop() is idempotent.
 @MainActor
 final class RefreshLoop {
     private let store: UsageStore

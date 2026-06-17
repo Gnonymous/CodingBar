@@ -31,8 +31,6 @@ public enum ClaudeScanner {
         return (allRecords, seenIds)
     }
 
-    // MARK: - File parsing
-
     static func parseFile(_ fileURL: URL) -> [RawRecord] {
         guard let data = try? Data(contentsOf: fileURL),
               let content = String(data: data, encoding: .utf8) else {
@@ -52,10 +50,8 @@ public enum ClaudeScanner {
                 continue
             }
 
-            // Must be type == "assistant"
             guard let type = obj["type"] as? String, type == "assistant" else { continue }
 
-            // Must have message with usage
             guard let message = obj["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else {
                 continue
@@ -66,17 +62,14 @@ public enum ClaudeScanner {
             let cacheRead   = usage["cache_read_input_tokens"] as? Int ?? 0
             let outputTokens = usage["output_tokens"] as? Int ?? 0
 
-            // Skip zero-usage lines
             guard inputTokens + outputTokens + cacheRead + cacheWrite > 0 else { continue }
 
             let model = message["model"] as? String ?? "unknown"
             let messageId = message["id"] as? String
 
-            // Parse timestamp
             let tsString = obj["timestamp"] as? String ?? ""
             let timestamp = iso.date(from: tsString) ?? Date()
 
-            // cwd
             let cwd = obj["cwd"] as? String ?? ""
 
             // Collect ALL tool_use names in this turn's content array
@@ -117,8 +110,6 @@ public enum ClaudeScanner {
 
         return records
     }
-
-    // MARK: - Helpers
 
     private static func makeISO8601Formatter() -> ISO8601DateFormatter {
         let f = ISO8601DateFormatter()

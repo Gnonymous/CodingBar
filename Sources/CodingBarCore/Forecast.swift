@@ -1,10 +1,6 @@
 import Foundation
 
-// MARK: - Forecast pillar: linear-extrapolate Codex weekly quota depletion.
-
 public enum Forecaster {
-
-    // MARK: - Quota history persistence
 
     private struct QuotaSample: Codable {
         var date: Double        // timeIntervalSince1970
@@ -36,8 +32,6 @@ public enum Forecaster {
         guard let data = try? JSONEncoder().encode(samples) else { return }
         try? data.write(to: historyURL)
     }
-
-    // MARK: - Record current quota snapshot
 
     public static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
         var history = loadHistory()
@@ -77,8 +71,6 @@ public enum Forecaster {
         return Insight(kind: .forecast, text: text)
     }
 
-    // MARK: - Per-provider forecast (panel "额度" section)
-
     /// For each provider that has a weekly window, forecast when it depletes.
     /// Returns `[Provider.rawValue: "<Name> 周额度预计 <weekday> <time> 见底"]`.
     /// Reads the history persisted by `recordAndForecast`, so call that first.
@@ -96,8 +88,6 @@ public enum Forecaster {
         }
         return out
     }
-
-    // MARK: - Regression helpers
 
     /// Linear-regress `remaining ~ a + b·t` over the samples and return the time
     /// (epoch seconds) at which remaining hits 0, or nil if the trend isn't a

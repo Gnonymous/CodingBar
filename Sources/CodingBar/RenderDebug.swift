@@ -28,7 +28,7 @@ enum RenderDebug {
     @MainActor
     static func renderPanel(to path: String, tab: Int, dark: Bool = true, scenario: String = "healthy",
                             metric: MenuMetric = .cost) {
-        let store = UsageStore()   // initialized with Snapshot.sample()
+        let store = UsageStore()
         store.snapshot = Self.scenarioSnapshot(scenario)
         store.menuMetric = metric
         let view = PanelView(store: store, initialTab: tab, scrollable: false)

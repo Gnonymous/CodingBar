@@ -44,12 +44,11 @@ public actor QuotaService {
 
         async let claude = ClaudeQuotaFetcher().fetch(now: now)
         async let codex = CodexQuotaFetcher().fetch(now: now)
-        let (c, x) = await (claude, codex)
+        let (claudeResult, codexResult) = await (claude, codex)
 
         var notes: [String] = []
-        // Claude first, then Codex (panel renders them grouped in order).
-        let claudeWindows = merge(c, into: &lastClaude, notes: &notes)
-        let codexWindows = merge(x, into: &lastCodex, notes: &notes)
+        let claudeWindows = merge(claudeResult, into: &lastClaude, notes: &notes)
+        let codexWindows = merge(codexResult, into: &lastCodex, notes: &notes)
 
         cachedWindows = claudeWindows + codexWindows
         cachedNotes = notes

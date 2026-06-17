@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Fuel pillar: live context-window gauge for the most-recent Claude session.
-
 enum FuelCalculator {
 
     // Maximum context window by model family
@@ -13,9 +11,17 @@ enum FuelCalculator {
         return 200_000  // default Claude context window
     }
 
-    // MARK: - FuelGauge
+    private static func usedTokens(for tokens: TokenBreakdown) -> Int {
+        tokens.input + tokens.cacheRead + tokens.cacheWrite
+    }
 
-    /// Build a FuelGauge from already-parsed Claude records.
+    // Detect 1M-context models even when the model string lacks the marker:
+    // if the live context already exceeds the assumed window, it must be larger.
+    private static func effectiveMaxTokens(used: Int, model: String) -> Int {
+        let maxTok = maxTokens(forModel: model)
+        return used > maxTok ? 1_000_000 : maxTok
+    }
+
     /// Returns (gauge, active, throughput).
     static func build(
         from claudeRecords: [RawRecord],
@@ -67,18 +73,14 @@ enum FuelCalculator {
             return (nil, isActive, 0)
         }
 
-        // Sort by timestamp
         let sorted = sessionRecords.sorted { $0.timestamp < $1.timestamp }
 
         // usedTokens = input context size from the latest turn
         // The best proxy is: last turn's input_tokens + cache_read + cache_creation
         // (this is the full context fed to the model on that turn)
         let last = sorted.last!
-        let usedTokens = last.tokens.input + last.tokens.cacheRead + last.tokens.cacheWrite
-        // Detect 1M-context models even when the model string lacks the marker:
-        // if the live context already exceeds the assumed window, it must be larger.
-        var maxTok = maxTokens(forModel: last.model)
-        if usedTokens > maxTok { maxTok = 1_000_000 }
+        let usedTokens = usedTokens(for: last.tokens)
+        let maxTok = effectiveMaxTokens(used: usedTokens, model: last.model)
 
         // Estimate remaining turns from average context GROWTH per turn so far
         // (total context / turns ≈ what each turn adds), far more realistic than
@@ -100,7 +102,6 @@ enum FuelCalculator {
             }
         }
 
-        // Session name = last path component of cwd, or "session"
         let cwd = last.cwd
         let sessionName = cwd.isEmpty ? "session"
             : URL(fileURLWithPath: cwd).lastPathComponent
@@ -153,9 +154,8 @@ enum FuelCalculator {
             guard let last = sorted.last,
                   now.timeIntervalSince(last.timestamp) <= 90 else { continue }
 
-            let used = last.tokens.input + last.tokens.cacheRead + last.tokens.cacheWrite
-            var maxTok = maxTokens(forModel: last.model)
-            if used > maxTok { maxTok = 1_000_000 }
+            let used = usedTokens(for: last.tokens)
+            let maxTok = effectiveMaxTokens(used: used, model: last.model)
 
             let recentOut = sorted.filter { $0.timestamp >= minuteAgo }
                 .reduce(0) { $0 + $1.tokens.output }

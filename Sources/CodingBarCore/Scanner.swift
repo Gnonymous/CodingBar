@@ -79,7 +79,6 @@ final class Scanner {
             guard fileURL.pathExtension == "jsonl" else { continue }
             let path = fileURL.path
 
-            // Get file signature
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
                   let mtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970,
                   let size = attrs[.size] as? Int64 else {
@@ -87,7 +86,6 @@ final class Scanner {
             }
             let sig = FileSignature(mtime: mtime, size: size)
 
-            // Check cache hit
             if let entry = cache[path],
                entry.sig.mtime == sig.mtime,
                entry.sig.size == sig.size {
@@ -95,7 +93,6 @@ final class Scanner {
                 continue
             }
 
-            // Cache miss — parse
             let parsed = parse(fileURL)
             let cached = CacheEntry(sig: sig, records: parsed.map(cachedRecord(from:)))
             cache[path] = cached
@@ -109,37 +106,37 @@ final class Scanner {
 
     // MARK: Conversion helpers
 
-    private func rawRecord(from c: CachedRecord) -> RawRecord {
+    private func rawRecord(from cached: CachedRecord) -> RawRecord {
         RawRecord(
-            provider: Provider(rawValue: c.provider) ?? .claude,
-            model: c.model,
-            timestamp: Date(timeIntervalSince1970: c.timestamp),
-            cwd: c.cwd,
-            tokens: TokenBreakdown(input: c.input, output: c.output, cacheRead: c.cacheRead, cacheWrite: c.cacheWrite, reasoning: c.reasoning),
-            toolName: c.toolName,
-            toolNames: c.toolNames,
-            messageId: c.messageId,
-            sessionKey: c.sessionKey,
-            hasInterrupt: c.hasInterrupt
+            provider: Provider(rawValue: cached.provider) ?? .claude,
+            model: cached.model,
+            timestamp: Date(timeIntervalSince1970: cached.timestamp),
+            cwd: cached.cwd,
+            tokens: TokenBreakdown(input: cached.input, output: cached.output, cacheRead: cached.cacheRead, cacheWrite: cached.cacheWrite, reasoning: cached.reasoning),
+            toolName: cached.toolName,
+            toolNames: cached.toolNames,
+            messageId: cached.messageId,
+            sessionKey: cached.sessionKey,
+            hasInterrupt: cached.hasInterrupt
         )
     }
 
-    private func cachedRecord(from r: RawRecord) -> CachedRecord {
+    private func cachedRecord(from raw: RawRecord) -> CachedRecord {
         CachedRecord(
-            provider: r.provider.rawValue,
-            model: r.model,
-            timestamp: r.timestamp.timeIntervalSince1970,
-            cwd: r.cwd,
-            input: r.tokens.input,
-            output: r.tokens.output,
-            cacheRead: r.tokens.cacheRead,
-            cacheWrite: r.tokens.cacheWrite,
-            reasoning: r.tokens.reasoning,
-            toolName: r.toolName,
-            toolNames: r.toolNames,
-            messageId: r.messageId,
-            sessionKey: r.sessionKey,
-            hasInterrupt: r.hasInterrupt
+            provider: raw.provider.rawValue,
+            model: raw.model,
+            timestamp: raw.timestamp.timeIntervalSince1970,
+            cwd: raw.cwd,
+            input: raw.tokens.input,
+            output: raw.tokens.output,
+            cacheRead: raw.tokens.cacheRead,
+            cacheWrite: raw.tokens.cacheWrite,
+            reasoning: raw.tokens.reasoning,
+            toolName: raw.toolName,
+            toolNames: raw.toolNames,
+            messageId: raw.messageId,
+            sessionKey: raw.sessionKey,
+            hasInterrupt: raw.hasInterrupt
         )
     }
 
@@ -154,7 +151,6 @@ final class Scanner {
     }
 
     private func saveCache() {
-        // Ensure directory exists
         let dir = cacheURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(cache) else { return }

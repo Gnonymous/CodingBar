@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import CodingBarCore
 
-// MARK: - Owns the NSStatusItem (hosting MenuBarItemView) and the NSPopover.
+// MARK: -
 @MainActor
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let store: UsageStore
@@ -85,7 +85,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 }
 
-// MARK: - SwiftUI wrapper that re-reads the store and rebuilds the MenuSummary on each change.
+// MARK: -
 private struct StatusItemContentView: View {
     @ObservedObject var store: UsageStore
 

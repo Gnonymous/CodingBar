@@ -12,7 +12,6 @@ struct OverviewTab: View {
     private var range: Range { store.selectedRange }
     private var metric: MenuMetric { store.menuMetric }
     private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
-    private var rangeLabel: String { switch range { case .today: "今日"; case .week: "近 7 天"; case .month: "近 30 天" } }
 
     private var sessions: [LiveSession] { snap.liveSessions }
     private var isBurning: Bool { !sessions.isEmpty }
@@ -454,7 +453,6 @@ struct CostTab: View {
                 RoundedRectangle(cornerRadius: 2).fill(dc.provider(m.provider)).frame(width: 6, height: 6)
                 Text(name).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg)
                 Spacer()
-                // secondary (the other metric) then primary (the active metric, bold)
                 Text(metric == .cost ? Panel.tok(m.tokens.total) : Panel.usd(m.cost))
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(dc.fg3)
                 Text(metric == .cost ? Panel.usd(m.cost) : Panel.tok(m.tokens.total))

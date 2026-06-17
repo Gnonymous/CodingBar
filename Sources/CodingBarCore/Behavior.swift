@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Behavior pillar: produces Habits from raw Claude records.
-
 enum Behavior {
 
     // MARK: - Tool classification
@@ -21,8 +19,6 @@ enum Behavior {
             return \.other
         }
     }
-
-    // MARK: - ToolMix (today)
 
     static func toolMix(from records: [RawRecord], todayStart: Date, now: Date) -> ToolMix {
         var mix = ToolMix()
@@ -80,28 +76,25 @@ enum Behavior {
             return Heatmap(cells: Array(repeating: Array(repeating: 0, count: 12), count: 7), peakLabel: "")
         }
 
-        // 7 rows × 12 cols accumulator (raw token counts)
         var grid: [[Int]] = Array(repeating: Array(repeating: 0, count: 12), count: 7)
 
         for r in records {
             guard r.timestamp >= thirtyDaysAgo && r.timestamp <= now else { continue }
             let weekday = cal.component(.weekday, from: r.timestamp)
             // Convert Sunday=1..Saturday=7 → Mon=0..Sun=6
-            let row = (weekday + 5) % 7   // Mon=0, Tue=1, ... Sun=6
+            let row = (weekday + 5) % 7
             let hour = cal.component(.hour, from: r.timestamp)
             let col = min(hour / 2, 11)   // 0=00:00-02:00, ..., 11=22:00-24:00
             let volume = r.tokens.total
             grid[row][col] += volume
         }
 
-        // Find max for normalization and peak label
         var maxVal = 0
-        var peakRow = 0, peakCol = 0
+        var peakCol = 0
         for row in 0..<7 {
             for col in 0..<12 {
                 if grid[row][col] > maxVal {
                     maxVal = grid[row][col]
-                    peakRow = row
                     peakCol = col
                 }
             }
@@ -121,7 +114,6 @@ enum Behavior {
         } else {
             peakLabel = ""
         }
-        _ = peakRow  // suppress unused warning
 
         return Heatmap(cells: normalized, peakLabel: peakLabel)
     }

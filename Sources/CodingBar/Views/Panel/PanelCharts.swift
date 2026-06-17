@@ -70,7 +70,7 @@ struct DCToolMix: View {
          ("执行", mix.run, Color(hex: "#e0a04d")), ("搜索", mix.search, Color(hex: "#b07cc6")),
          ("其他", mix.other, Color(hex: "#8a9099"))].filter { $0.1 > 0 }
     }
-    private var total: Double { Double(max(1, mix.write + mix.read + mix.run + mix.search + mix.other)) }
+    private var total: Double { Double(max(1, defs.map { $0.1 }.reduce(0, +))) }
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             GeometryReader { g in

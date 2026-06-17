@@ -9,17 +9,16 @@ public enum Aggregator {
     public static func run(now: Date = Date(), quota: [QuotaWindow] = []) -> Snapshot {
         let cal = Calendar.current
 
-        // 1. Scan all sources (token/cost/behavior — 100% local)
+        // token/cost/behavior aggregation is 100% local
         let (claudeRecords, _) = ClaudeScanner.scan()
         let codexRecords = CodexScanner.scan()
         let allRecords = claudeRecords + codexRecords
 
-        // 2. Date helpers
         let todayStart = cal.startOfDay(for: now)
         func isToday(_ date: Date) -> Bool { date >= todayStart && date <= now }
         func dayStart(_ date: Date) -> Date { cal.startOfDay(for: date) }
 
-        // 3. Today's records (drive the always-today menu bar + today's coach)
+        // drives the always-today menu bar + today's coach
         let todayRecords = allRecords.filter { isToday($0.timestamp) }
         var todayCost: Double = 0
         var todayTokens = TokenBreakdown()
@@ -28,8 +27,8 @@ public enum Aggregator {
             todayTokens += r.tokens
         }
 
-        // 4. Overview — precompute ALL three ranges so the panel switches instantly
-        //    and stays internally consistent (成果 + 代价 always from one range).
+        // precompute ALL three ranges so the panel switches instantly
+        // and stays internally consistent (成果 + 代价 always from one range).
         let weekStart  = cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
         let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
 
@@ -59,7 +58,7 @@ public enum Aggregator {
         let monthCwds = monthSpend.cwds.sorted { $0.value > $1.value }.map { $0.key }
         let gitRanges = GitCorrelator.buildRanges(cwds: monthCwds, now: now)
 
-        // 5. Trend — last 7 calendar days (always 7d, independent of the range pill)
+        // trend is always last 7 calendar days, independent of the range pill
         var trend: [DayPoint] = []
         for dayOffset in (0..<7).reversed() {
             guard let d = cal.date(byAdding: .day, value: -dayOffset, to: todayStart) else { continue }
@@ -76,7 +75,6 @@ public enum Aggregator {
             trend.append(DayPoint(date: d, cost: dayCost, tokens: dayTotalTokens))
         }
 
-        // 6. Models — group by normalized model, sort by cost desc
         var modelMap: [String: (tokens: TokenBreakdown, cost: Double)] = [:]
         for r in allRecords {
             let key = Pricing.normalize(model: r.model)
@@ -97,7 +95,6 @@ public enum Aggregator {
             }
             .sorted { $0.cost > $1.cost }
 
-        // 7. Projects — group by cwd, top 8 by cost
         var projectMap: [String: (tokens: TokenBreakdown, cost: Double, lastActive: Date)] = [:]
         for r in allRecords {
             guard !r.cwd.isEmpty else { continue }
@@ -127,7 +124,7 @@ public enum Aggregator {
             .prefix(8)
             .map { $0 }
 
-        // 8. Cache stats — Claude only
+        // cache stats are Claude only
         var totalCacheRead = 0
         var totalCacheWrite = 0
         var totalInput = 0
@@ -149,7 +146,6 @@ public enum Aggregator {
 
         let cache = CacheStat(hitRate: hitRate, savedUSD: savedUSD)
 
-        // 9. Menu — token display
         let totalTodayTokens = todayTokens.total
         let primaryText: String
         if totalTodayTokens >= 1_000_000 {
@@ -166,8 +162,6 @@ public enum Aggregator {
         // the *remaining* fraction (drives bar fill + color); the view renders it
         // as "used %".
         let quotaPercent: Double? = quota.menuWindow?.remaining
-
-        // ── Insight pillars ──────────────────────────────────────────────────
 
         // Pillar ③ — Habits (tool mix, rhythm, heatmap)
         let habits = Behavior.build(from: allRecords, todayStart: todayStart, now: now)
@@ -187,8 +181,6 @@ public enum Aggregator {
         var coach: [Insight] = Coach.build(from: todayRecords)
         if let fi = forecastInsight { coach.append(fi) }
 
-        // ── Assemble ─────────────────────────────────────────────────────────
-
         let menu = MenuSummary(
             metric: .tokens,
             primaryText: primaryText,
@@ -199,7 +191,6 @@ public enum Aggregator {
             throughput: throughput
         )
 
-        // 10. Overviews — one per range (today / last 7d / last 30d)
         func makeOverview(_ range: Range, start: Date, output: OutputStat) -> Overview {
             let s = spend(since: start)
             let periodDays = (range == .today) ? 1 : (range == .week ? 7 : 30)

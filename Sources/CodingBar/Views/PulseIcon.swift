@@ -17,7 +17,7 @@ struct PulseIcon: View {
 
     private var period: Double {
         let clamped = min(max(throughput, 0), 2000)
-        return 1.6 - clamped / 2000 * 1.0   // 1.6s → 0.6s
+        return 1.6 - clamped / 2000   // 1.6s → 0.6s
     }
 
     var body: some View {
