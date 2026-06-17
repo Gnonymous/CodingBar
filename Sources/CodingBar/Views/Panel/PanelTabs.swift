@@ -225,7 +225,8 @@ struct ProjectsTab: View {
             VStack(alignment: .leading, spacing: 11) {
                 SectionHeader("模型分布 · 全部")
                 ForEach(snap.models.prefix(5)) { m in
-                    BreakdownRow(name: m.model, dot: m.provider == .claude ? Theme.claudeColor : Theme.codexColor,
+                    BreakdownRow(name: Pricing.displayName(forCanonicalKey: m.model),
+                                 dot: m.provider == .claude ? Theme.claudeColor : Theme.codexColor,
                                  fraction: m.cost / maxModel,
                                  barColor: m.provider == .claude ? Theme.claudeColor : Theme.codexColor,
                                  value: "\(Panel.money(m.cost)) · \(Panel.tokens(m.tokens.total))")

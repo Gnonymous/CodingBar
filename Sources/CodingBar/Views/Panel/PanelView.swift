@@ -96,7 +96,7 @@ struct PanelView: View {
             Spacer()
             HStack(spacing: 14) {
                 footerButton("arrow.clockwise") { store.refresh(); store.refreshQuota(force: true) }
-                footerButton("textformat.123") { store.toggleMetric() }
+                metricToggle
                 footerButton("power") { onQuit() }
             }
         }
@@ -104,11 +104,32 @@ struct PanelView: View {
         .background(Color.black.opacity(0.18))
         .overlay(Rectangle().fill(Theme.hairline).frame(height: 1), alignment: .top)
     }
+
+    /// Footer toggle for the menu-bar metric. Shows the *current* metric (icon +
+    /// name) so it reads as both a state indicator and a switch.
+    private var metricToggle: some View {
+        let isTokens = store.menuMetric == .tokens
+        return Button { store.toggleMetric() } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isTokens ? "number" : "dollarsign")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(isTokens ? "Token" : "花费").font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(Theme.dimText)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("切换菜单栏第一行：今日 Token ⇄ 今日花费")
+    }
+
     private func footerButton(_ name: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: name).font(.system(size: 13)).foregroundStyle(Theme.dimText)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 
     private var background: some View {
