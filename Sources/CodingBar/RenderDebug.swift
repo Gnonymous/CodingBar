@@ -25,11 +25,33 @@ enum RenderDebug {
     }
 
     @MainActor
-    static func renderPanel(to path: String, tab: Int) {
+    static func renderPanel(to path: String, tab: Int, dark: Bool = true, scenario: String = "healthy") {
         let store = UsageStore()   // initialized with Snapshot.sample()
-        let view = PanelView(store: store, initialTab: tab, scrollable: false, onQuit: {})
-            .environment(\.colorScheme, .dark)
+        store.snapshot = Self.scenarioSnapshot(scenario)
+        let view = PanelView(store: store, initialTab: tab, scrollable: false)
+            .environment(\.colorScheme, dark ? .dark : .light)
         write(view, to: path, scale: 2)
+    }
+
+    /// Mutate the sample snapshot into the prototype's named scenarios so every
+    /// state (healthy / degraded / nosession / empty) can be rendered for review.
+    @MainActor
+    private static func scenarioSnapshot(_ name: String) -> Snapshot {
+        var s = Snapshot.sample()
+        switch name {
+        case "nosession":
+            s.liveSessions = []; s.burnPerMin = 0
+        case "degraded":
+            s.quota = s.quota.filter { $0.provider == .codex }
+            s.quotaNotes = ["Claude 用量接口错误 HTTP 429 · 需重新登录"]
+            s.quotaForecast = s.quotaForecast.filter { $0.key == "codex" }
+        case "empty":
+            s.liveSessions = []; s.burnPerMin = 0
+            s.coach = [Insight(kind: .tip, text: "欢迎使用 CodingBar！继续编码，这里会逐渐显示你的花费、效率与省钱建议。")]
+        default:
+            break
+        }
+        return s
     }
 
     @MainActor

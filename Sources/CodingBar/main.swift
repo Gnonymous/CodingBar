@@ -45,13 +45,26 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-menubar"), i + 1 < Com
 }
 if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < CommandLine.arguments.count {
     _ = NSApplication.shared
-    let path = CommandLine.arguments[i + 1]
-    let tab = Int(CommandLine.arguments[i + 2]) ?? 0
-    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab) }
+    let args = CommandLine.arguments
+    let path = args[i + 1]
+    let tab = Int(args[i + 2]) ?? 0
+    // Optional: --render-panel <path> <tab> [light|dark] [healthy|degraded|nosession|empty]
+    let dark = (i + 3 < args.count) ? (args[i + 3].lowercased() != "light") : true
+    let scenario = (i + 4 < args.count) ? args[i + 4] : "healthy"
+    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab, dark: dark, scenario: scenario) }
     exit(0)
 }
 
 // GUI mode: a background (accessory) menu bar app.
+// Single instance: terminate any older copies of ourselves so repackage/relaunch
+// cycles can't leave duplicate menu-bar icons behind.
+if let bid = Bundle.main.bundleIdentifier {
+    for other in NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+    where other != NSRunningApplication.current {
+        other.terminate()
+    }
+}
+
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate

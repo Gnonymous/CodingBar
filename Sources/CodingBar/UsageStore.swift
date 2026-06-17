@@ -57,9 +57,14 @@ final class UsageStore: ObservableObject {
             let result = await QuotaService.shared.current(force: force)
             self.quotaWindows = result.windows
             self.quotaNotes = result.notes
+            let nowD = Date()
+            _ = Forecaster.recordAndForecast(quota: result.windows, now: nowD)
+            let forecast = Forecaster.forecastByProvider(quota: result.windows, now: nowD)
             var snap = self.snapshot
             snap.quota = result.windows
             snap.quotaNotes = result.notes
+            snap.quotaForecast = forecast
+            snap.quotaFetchedAt = result.windows.isEmpty ? nil : nowD
             snap.menu.quotaPercent = result.windows.menuWindow?.remaining
             self.snapshot = snap
         }

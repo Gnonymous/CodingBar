@@ -114,4 +114,86 @@ enum FuelCalculator {
 
         return (gauge, isActive, throughput)
     }
+
+    // MARK: - Live sessions + burn rate
+
+    /// Build the list of parallel live sessions and the current $/minute burn rate.
+    /// A session is "live" if its latest record is within 90s of `now`. Burn rate is
+    /// the cost of all tokens (any provider) consumed in the last 60 seconds.
+    static func liveSessions(
+        claudeRecords: [RawRecord],
+        codexRecords: [RawRecord],
+        now: Date
+    ) -> (sessions: [LiveSession], burnPerMin: Double) {
+
+        let minuteAgo = now.addingTimeInterval(-60)
+
+        // Burn rate: $ spent over the last minute (≈ $/min).
+        var burn: Double = 0
+        for r in claudeRecords where r.timestamp >= minuteAgo && r.timestamp <= now {
+            burn += Pricing.cost(model: r.model, tokens: r.tokens)
+        }
+        for r in codexRecords where r.timestamp >= minuteAgo && r.timestamp <= now {
+            burn += Pricing.cost(model: r.model, tokens: r.tokens)
+        }
+
+        // Group Claude records by session; surface those active within 90s.
+        var bySession: [String: [RawRecord]] = [:]
+        for r in claudeRecords where !r.sessionKey.isEmpty {
+            bySession[r.sessionKey, default: []].append(r)
+        }
+
+        var sessions: [LiveSession] = []
+        for (key, recs) in bySession {
+            // Skip sidecar transcripts (sub-agent / workflow logs live *under* a
+            // project dir but aren't user-facing coding sessions).
+            if key.hasPrefix("agent-") { continue }
+
+            let sorted = recs.sorted { $0.timestamp < $1.timestamp }
+            guard let last = sorted.last,
+                  now.timeIntervalSince(last.timestamp) <= 90 else { continue }
+
+            let used = last.tokens.input + last.tokens.cacheRead + last.tokens.cacheWrite
+            var maxTok = maxTokens(forModel: last.model)
+            if used > maxTok { maxTok = 1_000_000 }
+
+            let recentOut = sorted.filter { $0.timestamp >= minuteAgo }
+                .reduce(0) { $0 + $1.tokens.output }
+            let tput = recentOut > 0 ? Double(recentOut) / 60.0 : 0
+
+            let mkey = Pricing.normalize(model: last.model)
+            let name = last.cwd.isEmpty ? "session"
+                : URL(fileURLWithPath: last.cwd).lastPathComponent
+
+            sessions.append(LiveSession(
+                name: name,
+                model: Pricing.displayName(forCanonicalKey: mkey),
+                provider: Pricing.provider(forCanonicalKey: mkey),
+                usedTokens: used,
+                maxTokens: maxTok,
+                throughput: tput
+            ))
+        }
+
+        // Collapse multiple session files for the same project into one row
+        // (a user thinks in projects, not transcript files). Throughput sums;
+        // context shows the fullest; model/provider come from the busiest one.
+        var merged: [String: LiveSession] = [:]
+        var order: [String] = []
+        for s in sessions.sorted(by: { $0.throughput > $1.throughput }) {
+            if var m = merged[s.name] {
+                m.throughput += s.throughput
+                if Double(s.usedTokens) / Double(max(s.maxTokens, 1))
+                    > Double(m.usedTokens) / Double(max(m.maxTokens, 1)) {
+                    m.usedTokens = s.usedTokens; m.maxTokens = s.maxTokens
+                }
+                merged[s.name] = m
+            } else {
+                merged[s.name] = s
+                order.append(s.name)
+            }
+        }
+        let deduped = order.compactMap { merged[$0] }.sorted { $0.throughput > $1.throughput }
+        return (Array(deduped.prefix(5)), burn)
+    }
 }

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Forecast pillar: linear-extrapolate Codex weekly quota depletion.
 
-enum Forecaster {
+public enum Forecaster {
 
     // MARK: - Quota history persistence
 
@@ -39,7 +39,7 @@ enum Forecaster {
 
     // MARK: - Record current quota snapshot
 
-    static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
+    public static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
         var history = loadHistory()
 
         // Append today's samples (deduplicate by rounding to the nearest hour)
@@ -71,42 +71,58 @@ enum Forecaster {
             .filter { $0.provider == Provider.codex.rawValue && $0.label == "7d" }
             .sorted { $0.date < $1.date }
 
-        guard weekSamples.count >= 2 else { return nil }
+        guard let tZero = regressZero(weekSamples),
+              tZero > now.timeIntervalSince1970 else { return nil }
+        let text = "周额度预计 " + formatDepletion(Date(timeIntervalSince1970: tZero)) + " 见底"
+        return Insight(kind: .forecast, text: text)
+    }
 
-        // Linear regression: remaining ~ a + b * t
-        // Find when remaining == 0
-        let n = Double(weekSamples.count)
-        let sumT = weekSamples.reduce(0.0) { $0 + $1.date }
-        let sumR = weekSamples.reduce(0.0) { $0 + $1.remaining }
-        let sumT2 = weekSamples.reduce(0.0) { $0 + $1.date * $1.date }
-        let sumTR = weekSamples.reduce(0.0) { $0 + $1.date * $1.remaining }
+    // MARK: - Per-provider forecast (panel "额度" section)
 
+    /// For each provider that has a weekly window, forecast when it depletes.
+    /// Returns `[Provider.rawValue: "<Name> 周额度预计 <weekday> <time> 见底"]`.
+    /// Reads the history persisted by `recordAndForecast`, so call that first.
+    public static func forecastByProvider(quota: [QuotaWindow], now: Date) -> [String: String] {
+        let history = loadHistory()
+        var out: [String: String] = [:]
+        for provider in [Provider.claude, Provider.codex] {
+            guard quota.contains(where: { $0.provider == provider && $0.label == "7d" }) else { continue }
+            let samples = history
+                .filter { $0.provider == provider.rawValue && $0.label == "7d" }
+                .sorted { $0.date < $1.date }
+            guard let tZero = regressZero(samples), tZero > now.timeIntervalSince1970 else { continue }
+            let name = provider == .claude ? "Claude" : "Codex"
+            out[provider.rawValue] = "\(name) 周额度预计 " + formatDepletion(Date(timeIntervalSince1970: tZero)) + " 见底"
+        }
+        return out
+    }
+
+    // MARK: - Regression helpers
+
+    /// Linear-regress `remaining ~ a + b·t` over the samples and return the time
+    /// (epoch seconds) at which remaining hits 0, or nil if the trend isn't a
+    /// clear decline.
+    private static func regressZero(_ samples: [QuotaSample]) -> Double? {
+        guard samples.count >= 2 else { return nil }
+        let n = Double(samples.count)
+        let sumT = samples.reduce(0.0) { $0 + $1.date }
+        let sumR = samples.reduce(0.0) { $0 + $1.remaining }
+        let sumT2 = samples.reduce(0.0) { $0 + $1.date * $1.date }
+        let sumTR = samples.reduce(0.0) { $0 + $1.date * $1.remaining }
         let denom = n * sumT2 - sumT * sumT
         guard abs(denom) > 1e-9 else { return nil }
-
         let b = (n * sumTR - sumT * sumR) / denom   // slope (should be negative)
-        let a = (sumR - b * sumT) / n                 // intercept
+        let a = (sumR - b * sumT) / n
+        guard b < -1e-9 else { return nil }          // only emit on a clear decline
+        return -a / b
+    }
 
-        // Only emit if trend is clearly decreasing (slope significantly negative)
-        guard b < -1e-9 else { return nil }
-
-        // t at remaining == 0: a + b*t = 0  →  t = -a/b
-        let tZero = -a / b
-        guard tZero > now.timeIntervalSince1970 else { return nil }  // already depleted?
-
-        let predictedDate = Date(timeIntervalSince1970: tZero)
-
-        // Format: "周额度预计 周四 15:00 见底"
+    /// "周四 15:00" — weekday + HH:mm of a predicted depletion date.
+    private static func formatDepletion(_ date: Date) -> String {
         let cal = Calendar.current
-        let weekdayIndex = cal.component(.weekday, from: predictedDate)  // 1=Sun .. 7=Sat
-        let hour = cal.component(.hour, from: predictedDate)
-        let minute = cal.component(.minute, from: predictedDate)
-
         let weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-        let weekdayLabel = weekdayNames[weekdayIndex - 1]
-        let timeLabel = String(format: "%02d:%02d", hour, minute)
-
-        let text = "周额度预计 \(weekdayLabel) \(timeLabel) 见底"
-        return Insight(kind: .forecast, text: text)
+        let wd = weekdayNames[cal.component(.weekday, from: date) - 1]
+        let h = cal.component(.hour, from: date), m = cal.component(.minute, from: date)
+        return wd + " " + String(format: "%02d:%02d", h, m)
     }
 }

@@ -118,6 +118,23 @@ public struct FuelGauge: Codable, Sendable {
     }
 }
 
+/// One live (or just-active) agent session — drives the panel's "实时燃烧" list.
+/// Heavy users run several agents in parallel, so this replaces the single fuel
+/// gauge with a per-session breakdown (each session's model / context / speed).
+public struct LiveSession: Codable, Sendable, Identifiable {
+    public var id: String { name + "·" + model }
+    public var name: String              // session name (cwd leaf)
+    public var model: String             // display name, e.g. "Opus 4.8"
+    public var provider: Provider
+    public var usedTokens: Int           // context tokens in use
+    public var maxTokens: Int            // context window (200K / 1M …)
+    public var throughput: Double        // tokens/sec
+    public init(name: String, model: String, provider: Provider, usedTokens: Int, maxTokens: Int, throughput: Double) {
+        self.name = name; self.model = model; self.provider = provider
+        self.usedTokens = usedTokens; self.maxTokens = maxTokens; self.throughput = throughput
+    }
+}
+
 /// Pillar ③: behavioral mirror.
 public struct ToolMix: Codable, Sendable {
     public var write: Int, read: Int, run: Int, search: Int, other: Int
@@ -169,9 +186,11 @@ public struct Overview: Codable, Sendable {
     public var range: Range
     public var spend: PeriodTotals
     public var output: OutputStat
-    public var deltaVsPrevPct: Double
+    /// Percent change vs the previous equal-length period; nil when there's no
+    /// prior period to compare (the pill is hidden, mirroring the prototype).
+    public var deltaVsPrevPct: Double?
     public var trend: [DayPoint]
-    public init(range: Range, spend: PeriodTotals, output: OutputStat, deltaVsPrevPct: Double, trend: [DayPoint]) {
+    public init(range: Range, spend: PeriodTotals, output: OutputStat, deltaVsPrevPct: Double?, trend: [DayPoint]) {
         self.range = range; self.spend = spend; self.output = output
         self.deltaVsPrevPct = deltaVsPrevPct; self.trend = trend
     }
@@ -225,13 +244,25 @@ public struct Snapshot: Codable, Sendable {
     public var quotaNotes: [String]
     public var coach: [Insight]
     public var fuel: FuelGauge?
+    /// Live/just-active sessions (parallel agents) + current burn rate ($/min).
+    public var liveSessions: [LiveSession]
+    public var burnPerMin: Double
+    /// Per-provider quota-depletion forecast text, keyed by `Provider.rawValue`
+    /// (e.g. "claude" → "Claude 周额度预计 周三 15:12 见底"). Empty when no history.
+    public var quotaForecast: [String: String]
+    /// When the online quota was last fetched (drives the "联网 · X 秒前" freshness).
+    public var quotaFetchedAt: Date?
     public init(generatedAt: Date, menu: MenuSummary, overview: Overview, habits: Habits,
                 projects: [ProjectStat], models: [ModelStat], cache: CacheStat,
                 quota: [QuotaWindow], coach: [Insight], fuel: FuelGauge?,
-                quotaNotes: [String] = [], overviews: [Overview] = []) {
+                quotaNotes: [String] = [], overviews: [Overview] = [],
+                liveSessions: [LiveSession] = [], burnPerMin: Double = 0,
+                quotaForecast: [String: String] = [:], quotaFetchedAt: Date? = nil) {
         self.generatedAt = generatedAt; self.menu = menu; self.overview = overview; self.habits = habits
         self.projects = projects; self.models = models; self.cache = cache; self.quota = quota
         self.coach = coach; self.fuel = fuel; self.quotaNotes = quotaNotes
         self.overviews = overviews.isEmpty ? [overview] : overviews
+        self.liveSessions = liveSessions; self.burnPerMin = burnPerMin
+        self.quotaForecast = quotaForecast; self.quotaFetchedAt = quotaFetchedAt
     }
 }

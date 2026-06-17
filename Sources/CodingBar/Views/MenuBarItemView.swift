@@ -17,8 +17,11 @@ struct MenuBarItemView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            PulseIcon(active: menu.active, throughput: menu.throughput)
-                .foregroundStyle(Color(nsColor: .labelColor))
+            PulseIcon(active: menu.active, throughput: menu.throughput,
+                      dotColor: menu.quotaPercent.map { Theme.quotaColor($0) })
+                // Crisp white on a dark menu bar (black on a light one) — not the
+                // slightly-gray 85%-alpha labelColor.
+                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(menu.primaryText)

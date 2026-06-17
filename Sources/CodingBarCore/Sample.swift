@@ -53,7 +53,18 @@ public extension Snapshot {
                 Insight(kind: .tip, text: "8 个简单任务用了 Opus。换 Haiku 同样能完成，今天可省 ~$0.9。", savingUSD: 0.9),
                 Insight(kind: .forecast, text: "周额度预计 周四 15:00 见底"),
             ],
-            fuel: FuelGauge(sessionName: "coding-bar", usedTokens: 142_000, maxTokens: 200_000, estRemainingTurns: 28)
+            fuel: FuelGauge(sessionName: "coding-bar", usedTokens: 142_000, maxTokens: 200_000, estRemainingTurns: 28),
+            liveSessions: [
+                LiveSession(name: "CodingBar", model: "Opus 4.8", provider: .claude, usedTokens: 123_954, maxTokens: 200_000, throughput: 142),
+                LiveSession(name: "web-scraper", model: "Sonnet 4.5", provider: .claude, usedTokens: 48_200, maxTokens: 200_000, throughput: 96),
+                LiveSession(name: "docs-site", model: "Haiku 4", provider: .claude, usedTokens: 18_400, maxTokens: 200_000, throughput: 64),
+            ],
+            burnPerMin: 1.92,
+            quotaForecast: [
+                "claude": "Claude 周额度预计 周三 15:12 见底",
+                "codex": "Codex 周额度预计 明日 08:30 见底",
+            ],
+            quotaFetchedAt: now.addingTimeInterval(-46)
         )
     }
 }

@@ -30,9 +30,35 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
             hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
         ])
-        button.action = #selector(togglePopover(_:))
+        button.action = #selector(handleClick(_:))
         button.target = self
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
+
+    /// Left-click toggles the popover; right-click (or ⌃-click) shows a small menu
+    /// with the affordances the v3 panel intentionally omits (metric toggle, quit).
+    @objc private func handleClick(_ sender: NSStatusBarButton) {
+        let event = NSApp.currentEvent
+        let isRight = event?.type == .rightMouseUp
+            || (event?.modifierFlags.contains(.control) ?? false)
+        if isRight { showContextMenu(from: sender) } else { togglePopover(sender) }
+    }
+
+    private func showContextMenu(from button: NSStatusBarButton) {
+        let menu = NSMenu()
+        let metricTitle = store.menuMetric == .tokens ? "菜单栏显示：今日花费" : "菜单栏显示：今日 Token"
+        let metric = NSMenuItem(title: metricTitle, action: #selector(toggleMetric), keyEquivalent: "")
+        metric.target = self
+        menu.addItem(metric)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "退出 CodingBar", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 5), in: button)
+    }
+
+    @objc private func toggleMetric() { store.toggleMetric() }
+    @objc private func quit() { NSApp.terminate(nil) }
 
     private func setupPopover() {
         popover = NSPopover()

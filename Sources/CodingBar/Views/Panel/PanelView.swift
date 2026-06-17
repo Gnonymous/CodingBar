@@ -2,141 +2,181 @@ import SwiftUI
 import AppKit
 import CodingBarCore
 
-// MARK: - The full popover panel: header + 3 tabs + footer (per mockups/panel-02.html)
+// MARK: - The popover panel (v3 — SpendPopoverTabbed.dc.html)
+// Header · active tab (总览 / 构成 / 洞察) · provenance · bottom nav.
 struct PanelView: View {
     @ObservedObject var store: UsageStore
+    @Environment(\.colorScheme) private var systemScheme
     @State private var tab: Int
+    @State private var refreshSpin: Double = 0
+    @State private var contentHeight: CGFloat = 0
+    /// Live popover scrolls within a screen-bounded height; offscreen rendering
+    /// (ImageRenderer has no update pass) uses natural height instead.
     let scrollable: Bool
-    var onQuit: () -> Void
 
-    init(store: UsageStore, initialTab: Int = 0, scrollable: Bool = true,
-         onQuit: @escaping () -> Void = { NSApplication.shared.terminate(nil) }) {
+    init(store: UsageStore, initialTab: Int = 0, scrollable: Bool = true) {
         self.store = store
         self._tab = State(initialValue: initialTab)
         self.scrollable = scrollable
-        self.onQuit = onQuit
     }
 
-    private let tabs = ["总览", "习惯", "项目"]
     private var snap: Snapshot { store.snapshot }
+    // Appearance follows the system (the popover inherits NSApp.effectiveAppearance).
+    private var dc: DCTheme { systemScheme == .dark ? .dark : .light }
+    private var burning: Bool { !snap.liveSessions.isEmpty }
+    private var statusText: String { burning ? "\(snap.liveSessions.count) 会话" : "空闲" }
 
-    @ViewBuilder private var tabContent: some View {
-        switch tab {
-        case 1: HabitsTab(snap: snap)
-        case 2: ProjectsTab(snap: snap)
-        default: OverviewTab(store: store)
-        }
+    /// Cap the scrollable region so a tall tab can't push the popover off-screen
+    /// (header / provenance / nav stay pinned; only the tab body scrolls).
+    private var maxContentHeight: CGFloat {
+        let h = NSScreen.main?.visibleFrame.height ?? 900
+        return max(360, h - 170)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            tabBar
-            PanelDivider()
-            // Natural height: the popover sizes itself to whichever tab is active
-            // (NSHostingController .preferredContentSize), so every tab shows in
-            // full and the panel re-sizes when you switch tabs.
-            tabContent
-            footer
+            if scrollable {
+                ScrollView(.vertical, showsIndicators: false) {
+                    tabContent
+                        .background(GeometryReader { g in
+                            Color.clear.preference(key: ContentHeightKey.self, value: g.size.height)
+                        })
+                }
+                .frame(height: contentHeight > 0 ? min(contentHeight, maxContentHeight) : nil)
+                .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+            } else {
+                tabContent
+            }
+            provenance
+            bottomNav
         }
         .frame(width: Panel.width)
-        .background(background)
-        .environment(\.colorScheme, .dark)
+        .background(dc.bg)
+        .environment(\.dc, dc)
     }
+
+    @ViewBuilder private var tabContent: some View {
+        switch tab {
+        case 1: CostTab(snap: snap)
+        case 2: InsightsTab(store: store)
+        default: OverviewTab(store: store, onShowInsights: { tab = 2 })
+        }
+    }
+
+    // MARK: Header
 
     private var header: some View {
-        HStack {
-            HStack(spacing: 7) {
-                PulseIcon(active: snap.menu.active, throughput: snap.menu.throughput)
-                    .frame(width: 15, height: 14).foregroundStyle(Theme.primaryText)
-                Text("CodingBar").font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.primaryText)
-            }
-            Spacer()
+        HStack(spacing: 8) {
+            brandMark
+            Text("CodingBar").font(.system(size: 13, weight: .semibold)).tracking(-0.13).foregroundStyle(dc.fg)
             HStack(spacing: 5) {
-                Circle().fill(snap.menu.active ? Theme.quotaGreen : Theme.faintText).frame(width: 6, height: 6)
-                Text(statusText).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.faintText)
+                BreathingDot(size: 6, color: burning ? dc.good : dc.fg3, animate: burning)
+                Text(statusText).font(.system(size: 10.5)).foregroundStyle(dc.fg2)
             }
-        }
-        .padding(.horizontal, Panel.hPad).padding(.top, 13).padding(.bottom, 11)
-    }
-
-    private var statusText: String {
-        guard snap.menu.active else { return "idle" }
-        let t = snap.menu.throughput
-        let rate = t >= 1000 ? String(format: "%.1fk", t / 1000) : String(format: "%.0f", t)
-        return "writing · \(rate) tok/s"
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
-                Button { tab = i } label: {
-                    Text(t).font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(i == tab ? Theme.primaryText : Theme.dimText)
-                        .frame(maxWidth: .infinity).padding(.vertical, 6)
-                        .background(i == tab
-                            ? AnyView(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.08))
-                                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline, lineWidth: 1)))
-                            : AnyView(Color.clear))
-                        .contentShape(Rectangle())   // whole pill is tappable, not just the glyphs
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()                // no blue macOS focus ring left behind
-            }
-        }
-        .padding(3)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.black.opacity(0.18)))
-        .padding(.horizontal, Panel.hPad).padding(.top, 12).padding(.bottom, 12)
-    }
-
-    private var footer: some View {
-        HStack {
-            Text("刷新于 \(Panel.relative(snap.generatedAt))")
-                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.faintText)
+            .padding(.leading, 6).padding(.trailing, 7).padding(.vertical, 2)
+            .background(Capsule().fill(dc.hover))
             Spacer()
-            HStack(spacing: 14) {
-                footerButton("arrow.clockwise") { store.refresh(); store.refreshQuota(force: true) }
-                metricToggle
-                footerButton("power") { onQuit() }
+            Button { doRefresh() } label: {
+                Text("⟳").font(.system(size: 14)).foregroundStyle(dc.fg3)
+                    .rotationEffect(.degrees(refreshSpin))
+                    .padding(.horizontal, 3).padding(.vertical, 1)
             }
+            .buttonStyle(.plain).focusEffectDisabled()
         }
-        .padding(.horizontal, Panel.hPad).padding(.vertical, 10)
-        .background(Color.black.opacity(0.18))
-        .overlay(Rectangle().fill(Theme.hairline).frame(height: 1), alignment: .top)
+        .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
     }
 
-    /// Footer toggle for the menu-bar metric. Shows the *current* metric (icon +
-    /// name) so it reads as both a state indicator and a switch.
-    private var metricToggle: some View {
-        let isTokens = store.menuMetric == .tokens
-        return Button { store.toggleMetric() } label: {
-            HStack(spacing: 4) {
-                Image(systemName: isTokens ? "number" : "dollarsign")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(isTokens ? "Token" : "花费").font(.system(size: 11, weight: .medium))
+    /// CodingBar's own mark: the pulse heartbeat on an accent tile (our identity,
+    /// not the prototype's terminal "›").
+    private var brandMark: some View {
+        RoundedRectangle(cornerRadius: 5).fill(dc.accent)
+            .frame(width: 17, height: 17)
+            .overlay(
+                HeartbeatShape()
+                    .stroke(.white, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                    .frame(width: 12, height: 10.5)
+            )
+    }
+
+    private func doRefresh() {
+        store.refresh()
+        store.refreshQuota(force: true)
+        withAnimation(.linear(duration: 0.8)) { refreshSpin += 360 }
+    }
+
+    // MARK: Provenance
+
+    private var provenance: some View {
+        HStack(spacing: 6) {
+            Circle().fill(dc.good).frame(width: 5, height: 5)
+            Text("本地实时").font(.system(size: 10)).foregroundStyle(dc.fg3)
+            Text("·").font(.system(size: 10)).foregroundStyle(dc.fg3.opacity(0.4))
+            Text("额度联网 \(Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt))")
+                .font(.system(size: 10)).foregroundStyle(dc.fg3)
+            Spacer()
+            Text("\(Panel.clock(snap.generatedAt)) 刷新").font(.system(size: 10)).foregroundStyle(dc.fg3)
+        }
+        .padding(.horizontal, 13).padding(.top, 7).padding(.bottom, 8)
+        .overlay(Rectangle().fill(dc.sep).frame(height: 1), alignment: .top)
+    }
+
+    // MARK: Bottom nav
+
+    private var bottomNav: some View {
+        HStack(spacing: 0) {
+            navButton(0, "总览")
+            navButton(1, "构成")
+            navButton(2, "洞察")
+        }
+        .background(dc.navbg)
+        .overlay(Rectangle().fill(dc.sep).frame(height: 1), alignment: .top)
+    }
+
+    private func navButton(_ i: Int, _ label: String) -> some View {
+        Button { tab = i } label: {
+            VStack(spacing: 3) {
+                NavGlyph(index: i).frame(width: 16, height: 16)
+                Text(label).font(.system(size: 9.5, weight: tab == i ? .semibold : .medium))
             }
-            .foregroundStyle(Theme.dimText)
+            .foregroundStyle(tab == i ? dc.accent : dc.fg3)
+            .frame(maxWidth: .infinity).padding(.top, 8).padding(.bottom, 10)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help("切换菜单栏第一行：今日 Token ⇄ 今日花费")
+        .buttonStyle(.plain).focusEffectDisabled()
     }
+}
 
-    private func footerButton(_ name: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name).font(.system(size: 13)).foregroundStyle(Theme.dimText)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-    }
+// Measures the active tab's natural height so the scroll region can size to it
+// (up to a screen-based cap).
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
 
-    private var background: some View {
+// MARK: - Bottom-nav glyphs (exact SVG geometry from the prototype, 16×16)
+
+private struct NavGlyph: View {
+    let index: Int
+    var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            LinearGradient(colors: [Theme.brandAmber.opacity(0.06), .clear],
-                           startPoint: .topTrailing, endPoint: .center)
+            switch index {
+            case 0:   // 总览 — four 5×5 rounded squares (rx 1.3) in a 2×2 grid
+                ForEach(Array([(4.5, 4.5), (11.5, 4.5), (4.5, 11.5), (11.5, 11.5)].enumerated()), id: \.offset) { _, c in
+                    RoundedRectangle(cornerRadius: 1.3).frame(width: 5, height: 5).position(x: c.0, y: c.1)
+                }
+            case 1:   // 构成 — open dashed donut ring (r5.2, stroke 2.4, dash 19 3 7 3, −90°)
+                Circle().inset(by: 2.8)
+                    .stroke(style: StrokeStyle(lineWidth: 2.4, dash: [19, 3, 7, 3]))
+                    .rotationEffect(.degrees(-90))
+            default:  // 洞察 — three ascending bars (heights 5 / 8 / 11, width 3, rx 1)
+                Group {
+                    RoundedRectangle(cornerRadius: 1).frame(width: 3, height: 5).position(x: 3.5, y: 11.5)
+                    RoundedRectangle(cornerRadius: 1).frame(width: 3, height: 8).position(x: 8, y: 10)
+                    RoundedRectangle(cornerRadius: 1).frame(width: 3, height: 11).position(x: 12.5, y: 8.5)
+                }
+            }
         }
+        .frame(width: 16, height: 16)
     }
 }

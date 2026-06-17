@@ -170,8 +170,13 @@ public enum Aggregator {
         // Pillar ② — Fuel gauge + active/throughput
         let (fuelGauge, isActive, throughput) = FuelCalculator.build(from: claudeRecords, now: now)
 
-        // Pillar ④ — Forecast
+        // Pillar ② — parallel live sessions + current burn rate ($/min)
+        let (liveSessions, burnPerMin) = FuelCalculator.liveSessions(
+            claudeRecords: claudeRecords, codexRecords: codexRecords, now: now)
+
+        // Pillar ④ — Forecast (records history, returns coach insight)
         let forecastInsight = Forecaster.recordAndForecast(quota: quota, now: now)
+        let quotaForecast = Forecaster.forecastByProvider(quota: quota, now: now)
 
         // Pillar ④b — Coach tips
         var coach: [Insight] = Coach.build(from: todayRecords)
@@ -195,7 +200,7 @@ public enum Aggregator {
             let periodDays = (range == .today) ? 1 : (range == .week ? 7 : 30)
             let prevStart = cal.date(byAdding: .day, value: -periodDays, to: start) ?? start
             let prev = cost(from: prevStart, to: start)
-            let delta = prev > 0 ? (s.cost - prev) / prev * 100 : 0
+            let delta: Double? = prev > 0 ? (s.cost - prev) / prev * 100 : nil
             return Overview(
                 range: range,
                 spend: PeriodTotals(cost: s.cost, tokens: s.tokens, sessions: s.cwds.count),
@@ -222,7 +227,11 @@ public enum Aggregator {
             quota: quota,
             coach: coach,
             fuel: fuelGauge,
-            overviews: overviews
+            overviews: overviews,
+            liveSessions: liveSessions,
+            burnPerMin: burnPerMin,
+            quotaForecast: quotaForecast,
+            quotaFetchedAt: quota.isEmpty ? nil : now
         )
     }
 }
