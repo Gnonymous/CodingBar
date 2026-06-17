@@ -42,6 +42,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-menubar"), i + 1 < Com
     MainActor.assumeIsolated { RenderDebug.renderMenuBar(to: path) }
     exit(0)
 }
+// Debug: write the DIRECTION 03 app icon as a complete `.iconset` directory.
+// Pipe through `iconutil -c icns <dir>` to produce CodingBar.icns.
+if let i = CommandLine.arguments.firstIndex(of: "--render-appicon"), i + 1 < CommandLine.arguments.count {
+    _ = NSApplication.shared
+    let dir = CommandLine.arguments[i + 1]
+    MainActor.assumeIsolated { AppIconRenderer.writeIconset(to: dir) }
+    exit(0)
+}
 if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < CommandLine.arguments.count {
     _ = NSApplication.shared
     let args = CommandLine.arguments

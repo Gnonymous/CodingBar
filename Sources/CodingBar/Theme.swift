@@ -15,6 +15,10 @@ enum Theme {
     static let quotaAmber = Color(hex: "#ffb23e")
     static let quotaRed   = Color(hex: "#ff5a52")
 
+    // Live "breathing" dot — the single green liveness mark of the DIRECTION 03
+    // app icon, reused in the menu-bar glyph. Green = an agent session is active.
+    static let liveGreen = Color(hex: "#30d158")
+
     // Provider tints (small dots only)
     static let claudeColor = Color(hex: "#dd8a5a")
     static let codexColor  = Color(hex: "#6aa6dd")

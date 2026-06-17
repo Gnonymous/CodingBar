@@ -21,6 +21,10 @@ BUNDLE="$ROOT/.build/release/CodingBar_CodingBar.bundle"
 
 cp "$ROOT/Scripts/Info.plist" "$APP/Contents/Info.plist"
 
+# App icon (DIRECTION 03 pulse squircle). Committed as Scripts/AppIcon.icns;
+# regenerate with `make icon`. CFBundleIconFile in Info.plist points at it.
+[ -f "$ROOT/Scripts/AppIcon.icns" ] && cp "$ROOT/Scripts/AppIcon.icns" "$APP/Contents/Resources/CodingBar.icns"
+
 # Stamp the version from $CODINGBAR_VERSION when set (CI passes the git tag);
 # local builds keep the value baked into Info.plist.
 if [ -n "${CODINGBAR_VERSION:-}" ]; then

@@ -14,6 +14,8 @@
     <string>0.1.0</string>
     <key>CFBundleExecutable</key>
     <string>CodingBar</string>
+    <key>CFBundleIconFile</key>
+    <string>CodingBar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>

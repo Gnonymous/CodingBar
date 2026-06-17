@@ -111,7 +111,9 @@ struct PanelView: View {
             .overlay(
                 HeartbeatShape()
                     .stroke(.white, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
-                    .frame(width: 12, height: 10.5)
+                    // Match the waveform's natural 84:52 bbox aspect so the spike
+                    // isn't stretched in the square tile.
+                    .frame(width: 13, height: 8)
             )
     }
 
