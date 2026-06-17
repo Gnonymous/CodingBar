@@ -1,66 +1,115 @@
-# CodingBar
+<h4 align="right"><strong>English</strong> | <a href="README_ZH.md">简体中文</a></h4>
 
-> 常驻 Mac 菜单栏的 **AI 编程副驾驶仪表盘**。用量/成本/行为全部读本地 agent 日志；**仅额度查询联网**（带你自己的 OAuth token 读官方用量接口，只读、不上传）。
+<div align="center">
+  <h1>CodingBar</h1>
+  <p><b>A co-pilot dashboard for your AI coding agents — right in the macOS menu bar.</b></p>
+  <a href="https://github.com/Gnonymous/CodingBar/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Gnonymous/CodingBar/ci.yml?branch=main&style=flat-square&label=build" alt="Build"></a>
+  <a href="https://github.com/Gnonymous/CodingBar/stargazers"><img src="https://img.shields.io/github/stars/Gnonymous/CodingBar?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/Gnonymous/CodingBar/releases"><img src="https://img.shields.io/github/v/tag/Gnonymous/CodingBar?label=version&style=flat-square" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-blue.svg?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-orange?style=flat-square" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Swift_6-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6">
+</div>
 
-Tokei / CodexBar 是**账单**（你花了多少钱）。CodingBar 想做的是**副驾驶仪表盘**：你和 AI 一起干成了什么、值不值、怎么更值。token / 成本 / 额度退居底座，洞察上位。
+<p align="center">
+  <img src="docs/assets/menubar.png" width="760" alt="CodingBar menu bar — quota states" />
+</p>
 
-目前支持 **Claude Code** 与 **Codex**，从 `~/.claude/projects` 与 `~/.codex/sessions` 的本地 jsonl 读取，增量扫描、无外部依赖、无 Xcode（纯 SwiftPM）。
+<p align="center">
+  <img src="docs/assets/panel-overview.png" width="320" alt="CodingBar panel — Overview" />
+</p>
 
-## 它长什么样
+<p align="center"><sub><em>Screenshots rendered from sample data via <code>--render-panel</code>.</em></sub></p>
 
-**菜单栏**：一个单色脉冲图标 + 两行严格等宽数字。默认上行今日 Token、下行额度剩余 % + 同行变色进度条（绿 ≥50 / 琥珀 25–49 / 红 <25）。脉冲随实时吞吐跳动。点底栏的 `123` 图标可切换上行为今日花费 `$`。
+<details>
+<summary><strong>More views — Composition · Insights · Light mode</strong></summary>
+<br/>
+<table>
+  <tr>
+    <td><img src="docs/assets/panel-composition.png" alt="Composition tab" /></td>
+    <td><img src="docs/assets/panel-insights.png" alt="Insights tab" /></td>
+    <td><img src="docs/assets/panel-light.png" alt="Light mode" /></td>
+  </tr>
+</table>
+</details>
 
-**点开后的面板**（三个 Tab）：
-- **总览** — 英雄区把「成果 ↔ 代价」并置（git 产出 +/−行·commit·文件 ‖ 今日花费·token），效率行 `$/行`、`$/commit`；实时教练（当前会话上下文燃料表 + 省钱提示）；额度（Claude 5h/7d/7d·Opus/7d·Sonnet + Codex 5h/7d 实时进度条 + 燃尽预测，凭证失效时降级提示）；近 7 天趋势曲线。
-- **习惯** — 工具画像（写/读/跑/搜 占比）、协作节奏（轮数/时长/打断率）、黄金时段热力图。
-- **项目** — 项目排行、模型分布、缓存命中率与省下的钱。
+## Why
 
-设计真源见 `mockups/`（`menubar-numbers-v4.html`、`panel-02.html`）。
+Tokei and CodexBar are **bills** — how much you spent. CodingBar is a **co-pilot dashboard**: what you and the AI actually got done, whether it was worth it, and how to make it more worth it. Tokens, cost and quota become the foundation; insight sits on top.
 
-## 四大洞察支柱
+Everything is read from your local **Claude Code** and **Codex** logs — incremental, no external dependencies, no Xcode. **Only live quota touches the network**, with a read-only call using your own token.
 
-1. **产出关联**（git）— 把花费翻译成产出：今天 agent 协助产生了多少 +/−行、commit、文件，以及 `$/行`、`$/commit`。归因用「会话时间窗内 cwd 的 git 改动」近似（非精确，诚实标注）。
-2. **实时教练** — 当前会话上下文燃料表（含 1M-context 模型识别）、额度燃尽线性预测、省钱/换模型提示（如「N 个简单任务用了 Opus，换 Haiku 可省 $X」）。额度来自官方用量接口（Claude `api.anthropic.com/api/oauth/usage`、Codex `chatgpt.com/backend-api/wham/usage`），OAuth token 从本地 Keychain / `auth.json` 静默读取。
-3. **行为镜子** — 工具使用画像、协作节奏、按时段的活跃热力图，全部来自 jsonl 的 `tool_use` 与时间戳。
-4. **活着的菜单栏** — 脉冲图标随实时吞吐跳动、里程碑感。
+## Features
 
-## 运行
+- **Outcome over spend**: pairs git output (+/− lines · commits · files) against today's cost, with `$/line` and `$/commit`. Spend you can finally read as *work done*.
+- **Live coach**: a current-session context fuel gauge (with 1M-context detection), a linear quota burn-down forecast, and money tips like *"8 simple tasks ran on Opus — Haiku would've saved $0.9"*.
+- **Behavior mirror**: your tool-use mix (write / read / run / search), collaboration rhythm, and a golden-hours activity heatmap — all from the `tool_use` events in your logs.
+- **A living menu bar**: a monochrome pulse that beats with real-time throughput, plus two rows of strict tabular figures — today's tokens / spend and remaining quota at a glance.
+- **Local-first & private**: usage, cost, behavior and git are 100% offline. Quota is the only network call — a read-only GET of *your* usage, nothing uploaded, credentials read without ever showing a password prompt.
+- **Native & zero-dependency**: pure SwiftPM, no Xcode project, no third-party packages. Reads `~/.claude/projects` and `~/.codex/sessions` directly.
 
-需要 macOS 14+ 与 Swift 工具链（Command Line Tools 即可，无需 Xcode）。
+## Install
+
+### Download
+
+Grab the latest `.dmg` (or `.zip`) from [Releases](https://github.com/Gnonymous/CodingBar/releases), open it, and drag **CodingBar** to Applications.
+
+The app is **ad-hoc signed** (no paid Apple Developer ID), so Gatekeeper warns on first launch. Right-click → **Open**, or clear the quarantine flag:
 
 ```bash
-make run        # 调试运行（菜单栏出现脉冲图标）
-make dump       # 打印计算出的 Snapshot JSON（验证数据层，不开 GUI）
-make test       # 可运行自检（CLT 下没有 XCTest，用这个）
-make package    # 产出 dist/CodingBar.app，可双击运行
+xattr -dr com.apple.quarantine /Applications/CodingBar.app
 ```
 
-打包后：`open dist/CodingBar.app`，在菜单栏右侧找脉冲图标。
+The pulse icon appears on the right of your menu bar.
 
-## 架构
+### Build from source
 
-纯 SwiftPM，两个 target：
+macOS 14+ and a Swift 6 toolchain (Command Line Tools is enough — no Xcode project).
 
-- **`CodingBarCore`** — 数据层（可测、无 UI）：`Scanner`（增量缓存）、`ClaudeScanner`/`CodexScanner`、`Pricing`、`Aggregator`，四支柱 `Behavior`/`Fuel`/`Forecast`/`Coach`/`GitCorrelator`，以及 `Quota/`（`Credentials` 防弹窗凭证读取、`ClaudeQuotaFetcher`/`CodexQuotaFetcher` 联网查额度、`QuotaService` 并发+5min TTL 缓存）。产出一个 `Snapshot`。
-- **`CodingBar`** — App（AppKit `NSStatusItem` + SwiftUI）：`UsageStore`（@MainActor ObservableObject）、`RefreshLoop`（30s）、`StatusItemController`（菜单栏 + NSPopover）、`MenuBarItemView`、三 Tab 面板。
+```bash
+make run        # debug run (pulse icon appears in the menu bar)
+make dump       # print the computed Snapshot as JSON (verify the data layer, no GUI)
+make test       # runnable self-test
+make package    # produce dist/CodingBar.app
+```
 
-数据层与 UI 解耦：`swift run CodingBar --dump-json` 可在不开 GUI 的情况下用真实日志验证数据；UI 用 `--render-menubar` / `--render-panel` 离屏渲染成 PNG 自检。
+## The panel
 
-## 数据与隐私
+Click the menu-bar item for a three-tab panel:
 
-- **用量 / 成本 / 行为 / git**：100% 本地、离线。只读取 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`。价格表 `Sources/CodingBar/Resources/pricing.json` 用户可改。
-- **额度**：唯一联网的部分。带你自己的 OAuth token 向官方用量接口发 **只读 GET**（查你自己的额度），不上传任何本地内容、不查消费明细。5 分钟 TTL 缓存，不频繁打接口。
-- **凭证读取防弹窗**：Claude 的 OAuth token 存在 Keychain（`Claude Code-credentials`）。自签名进程直接读会被 macOS 反复弹密码框，因此 CodingBar **spawn Apple 签名的 `/usr/bin/security`** 来静默读取（它在该条目的可信 ACL 内）；读不到就优雅降级为「额度不可用」，**绝不弹窗**。Codex 走 `~/.codex/auth.json`。
+- **Overview** (总览) — the *outcome ↔ cost* hero (git output ‖ today's spend), `$/line` & `$/commit`, the live coach (context fuel + savings tips), live quota bars with burn-down forecasts, and a 7-day trend.
+- **Composition** (构成) — where the money went: spend by model and by project.
+- **Insights** (洞察) — code output, your tool-use mix, a golden-hours heatmap, plus savings tips and a quota-depletion forecast.
 
-## 现状与路线
+The design source of truth lives in `mockups/` (`menubar-numbers-v4.html`, `panel-02.html`).
 
-v1 已实现上述全部。已知取舍与后续：
-- **额度**：Claude + Codex 均改为联网读官方用量接口（实时、含 Claude 细分窗口），防弹窗静默读凭证。接口为非公开端点，官方若调整字段需跟随更新。
-- **范围**：总览为「今日」；模型/项目/缓存为「全部」（已如实标注），范围切换器目前是视觉占位，范围联动为路线项。
-- **git 产出**为近似归因，非逐行精确。
-- **图标**：菜单栏用占位脉冲 glyph，正式图标待设计。
-- 未签名公证（本地 ad-hoc）；自动更新（Sparkle）为路线项。
+## Privacy
+
+- **Usage / cost / behavior / git** — 100% local and offline. Reads only `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`. The price table (`Sources/CodingBar/Resources/pricing.json`) is user-editable.
+- **Quota** — the only networked path. A **read-only GET** with your own OAuth token to each provider's usage endpoint (Claude `api.anthropic.com/api/oauth/usage`, Codex `chatgpt.com/backend-api/wham/usage`). It never uploads local content and never reads billing detail. 5-minute TTL cache.
+- **Prompt-free credentials** — Claude's OAuth token lives in the Keychain. A self-signed app reading it directly makes macOS re-prompt endlessly, so CodingBar spawns the Apple-signed `/usr/bin/security` (inside that entry's trusted ACL) to read it silently, and degrades to *"quota unavailable"* if it can't. **It never shows a password prompt.** Codex uses `~/.codex/auth.json`.
+
+## Architecture
+
+Pure SwiftPM, two targets, data layer fully decoupled from UI:
+
+- **`CodingBarCore`** — the headless, testable data layer: `Scanner` (incremental cache), `ClaudeScanner` / `CodexScanner`, `Pricing`, `Aggregator`, the four pillars (`Behavior` / `Fuel` / `Forecast` / `Coach` / `GitCorrelator`), and `Quota/` (`Credentials`, the Claude/Codex fetchers, and `QuotaService` with a 5-min TTL cache). It produces one immutable `Snapshot`.
+- **`CodingBar`** — the AppKit `NSStatusItem` + SwiftUI app: `UsageStore` (`@MainActor ObservableObject`), `RefreshLoop`, `StatusItemController`, `MenuBarItemView`, and the three-tab panel.
+
+Because the layers are decoupled, `swift run CodingBar --dump-json` verifies data against real logs with no GUI, and `--render-menubar` / `--render-panel` rasterize the UI to PNG offscreen. See [`CLAUDE.md`](CLAUDE.md) for the full map.
+
+## Roadmap
+
+v1 ships everything above. Next:
+
+- Wire the range switcher through (Overview is "today"; model / project / cache are "all-time", labeled as such).
+- A designed app icon (the menu bar currently uses a placeholder pulse glyph).
+- Auto-update (Sparkle) and notarized builds.
+
+## Contributing
+
+Issues and PRs welcome. Read [`CLAUDE.md`](CLAUDE.md) first — it documents the architecture, the frozen `Models.swift` contract, the comment philosophy, and the credential / privacy landmines. CI keeps `swift build` and `swift test` green on every push.
 
 ## License
 
-私有项目。参考项目（KeyStats / Tokei / CodexBar）仅作本地研究，不随仓库分发。
+[Apache License 2.0](LICENSE). If you fork CodingBar into your own product, please give it a different name and credit CodingBar as the source. Reference projects (KeyStats / Tokei / CodexBar) are kept locally for research only and are **not** distributed with this repository.

@@ -1,0 +1,8 @@
+# Keep GitHub's language stats focused on the Swift app, not the HTML mockups/docs.
+mockups/**   linguist-documentation
+docs/**      linguist-documentation
+*.html       linguist-documentation
+
+# Treat rendered screenshots as binary.
+*.png        binary
+*.icns       binary
