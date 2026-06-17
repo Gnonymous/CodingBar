@@ -109,10 +109,17 @@ struct OverviewTab: View {
             // 额度
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader("额度")
-                if snap.quota.isEmpty {
+                if snap.quota.isEmpty && snap.quotaNotes.isEmpty {
                     Text("暂无可读取的额度数据").font(.system(size: 12)).foregroundStyle(Theme.faintText)
                 } else {
                     ForEach(snap.quota) { QuotaRow(window: $0, now: snap.generatedAt) }
+                    ForEach(snap.quotaNotes, id: \.self) { note in
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10)).foregroundStyle(Theme.quotaAmber)
+                            Text(note).font(.system(size: 11)).foregroundStyle(Theme.dimText)
+                        }
+                    }
                 }
                 if let forecast {
                     HStack(spacing: 7) {

@@ -20,7 +20,7 @@ public extension Snapshot {
         }
         return Snapshot(
             generatedAt: now,
-            menu: MenuSummary(metric: .tokens, primaryText: "1.2M", quotaPercent: 0.63, active: true, throughput: 1400),
+            menu: MenuSummary(metric: .tokens, primaryText: "1.2M", quotaPercent: 0.26, active: true, throughput: 1400),
             overview: Overview(
                 range: .today,
                 spend: PeriodTotals(cost: 4.20, tokens: TokenBreakdown(input: 280_000, output: 95_000, cacheRead: 820_000, cacheWrite: 60_000), sessions: 7),
@@ -43,9 +43,11 @@ public extension Snapshot {
             ],
             cache: CacheStat(hitRate: 0.87, savedUSD: 6.40),
             quota: [
-                QuotaWindow(provider: .claude, label: "5h", remaining: 0.63, resetAt: now.addingTimeInterval(2 * 3600 + 12 * 60)),
-                QuotaWindow(provider: .claude, label: "7d", remaining: 0.41, resetAt: now.addingTimeInterval(3 * 86_400)),
-                QuotaWindow(provider: .codex, label: "5h", remaining: 0.78, resetAt: now.addingTimeInterval(4 * 3600)),
+                QuotaWindow(provider: .claude, label: "5h", remaining: 0.88, resetAt: now.addingTimeInterval(2 * 3600 + 12 * 60)),
+                QuotaWindow(provider: .claude, label: "7d", remaining: 0.79, resetAt: now.addingTimeInterval(4 * 86_400)),
+                QuotaWindow(provider: .claude, label: "7d·Sonnet", remaining: 0.98, resetAt: now.addingTimeInterval(4 * 86_400)),
+                QuotaWindow(provider: .codex, label: "5h", remaining: 0.99, resetAt: now.addingTimeInterval(3 * 3600)),
+                QuotaWindow(provider: .codex, label: "7d", remaining: 0.26, resetAt: now.addingTimeInterval(86_400)),
             ],
             coach: [
                 Insight(kind: .tip, text: "8 个简单任务用了 Opus。换 Haiku 同样能完成，今天可省 ~$0.9。", savingUSD: 0.9),

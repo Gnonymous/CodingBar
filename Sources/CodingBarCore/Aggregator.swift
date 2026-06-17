@@ -2,12 +2,16 @@ import Foundation
 
 public enum Aggregator {
 
-    public static func run(now: Date = Date()) -> Snapshot {
+    /// `quota` is supplied by the online `QuotaService` (Claude + Codex usage
+    /// APIs). It is a parameter rather than scanned here so the local-log
+    /// aggregation stays synchronous and offline; the UI injects the latest
+    /// network-fetched quota each run.
+    public static func run(now: Date = Date(), quota: [QuotaWindow] = []) -> Snapshot {
         let cal = Calendar.current
 
-        // 1. Scan all sources
+        // 1. Scan all sources (token/cost/behavior — 100% local)
         let (claudeRecords, _) = ClaudeScanner.scan()
-        let (codexRecords, quota) = CodexScanner.scan()
+        let codexRecords = CodexScanner.scan()
         let allRecords = claudeRecords + codexRecords
 
         // 2. Date helpers
@@ -145,7 +149,8 @@ public enum Aggregator {
             primaryText = "\(totalTodayTokens)"
         }
 
-        let quotaPercent: Double? = quota.first?.remaining
+        // Menu bar shows the most-depleted window across both providers.
+        let quotaPercent: Double? = quota.tightestRemaining
 
         // ── Insight pillars ──────────────────────────────────────────────────
 

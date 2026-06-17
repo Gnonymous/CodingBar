@@ -94,7 +94,7 @@ struct PanelView: View {
                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.faintText)
             Spacer()
             HStack(spacing: 14) {
-                footerButton("arrow.clockwise") { store.refresh() }
+                footerButton("arrow.clockwise") { store.refresh(); store.refreshQuota(force: true) }
                 footerButton("textformat.123") { store.toggleMetric() }
                 footerButton("power") { onQuit() }
             }

@@ -9,6 +9,12 @@ final class UsageStore: ObservableObject {
     @Published var snapshot: Snapshot = .sample()
     @Published var menuMetric: MenuMetric = .tokens
 
+    // Last-known online quota (Claude + Codex usage APIs). Refreshed on its own
+    // 5-min cadence and carried into every local refresh so the snapshot stays
+    // consistent between network fetches.
+    private var quotaWindows: [QuotaWindow] = []
+    private var quotaNotes: [String] = []
+
     /// The primaryText for the current menuMetric.
     var primaryText: String {
         switch menuMetric {
@@ -21,10 +27,31 @@ final class UsageStore: ObservableObject {
         menuMetric = (menuMetric == .tokens) ? .cost : .tokens
     }
 
+    /// Re-aggregate local logs (fast, offline). Reuses the last-known quota.
     func refresh() {
+        let q = quotaWindows
+        let notes = quotaNotes
         Task.detached(priority: .userInitiated) {
-            let snap = Aggregator.run()
-            await MainActor.run { self.snapshot = snap }
+            var snap = Aggregator.run(quota: q)
+            snap.quotaNotes = notes
+            let result = snap
+            await MainActor.run { self.snapshot = result }
+        }
+    }
+
+    /// Fetch online quota (TTL-cached in QuotaService) and patch it into the
+    /// current snapshot in place — no local rescan needed. `force` bypasses the
+    /// cache for the manual refresh button.
+    func refreshQuota(force: Bool = false) {
+        Task {
+            let result = await QuotaService.shared.current(force: force)
+            self.quotaWindows = result.windows
+            self.quotaNotes = result.notes
+            var snap = self.snapshot
+            snap.quota = result.windows
+            snap.quotaNotes = result.notes
+            snap.menu.quotaPercent = result.windows.tightestRemaining
+            self.snapshot = snap
         }
     }
 

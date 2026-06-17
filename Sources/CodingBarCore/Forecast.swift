@@ -66,9 +66,9 @@ enum Forecaster {
         history = history.filter { $0.date >= cutoff }
         saveHistory(history)
 
-        // Forecast for Codex weekly window ("周")
+        // Forecast for Codex weekly window ("7d")
         let weekSamples = history
-            .filter { $0.provider == Provider.codex.rawValue && $0.label == "周" }
+            .filter { $0.provider == Provider.codex.rawValue && $0.label == "7d" }
             .sorted { $0.date < $1.date }
 
         guard weekSamples.count >= 2 else { return nil }

@@ -82,8 +82,9 @@ struct QuotaRow: View {
             HStack(spacing: 6) {
                 Circle().fill(providerColor).frame(width: 7, height: 7)
                 Text(label).font(.system(size: 12)).foregroundStyle(Theme.dimText)
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
-            .frame(width: 78, alignment: .leading)
+            .frame(width: 116, alignment: .leading)
             HBar(fraction: window.remaining, color: Theme.quotaColor(window.remaining))
             Text("\(Int((window.remaining*100).rounded()))%")
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())

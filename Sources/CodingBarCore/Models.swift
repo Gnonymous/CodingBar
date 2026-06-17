@@ -74,6 +74,12 @@ public struct QuotaWindow: Codable, Sendable, Identifiable {
     }
 }
 
+public extension Array where Element == QuotaWindow {
+    /// The most-depleted window's remaining fraction (drives the menu-bar bar),
+    /// nil when there is no quota data.
+    var tightestRemaining: Double? { map(\.remaining).min() }
+}
+
 public struct CacheStat: Codable, Sendable {
     public var hitRate: Double         // 0...1
     public var savedUSD: Double
@@ -197,13 +203,17 @@ public struct Snapshot: Codable, Sendable {
     public var models: [ModelStat]
     public var cache: CacheStat
     public var quota: [QuotaWindow]
+    /// Provider-level degradation notes for the quota section, e.g. "Claude 需重新登录".
+    /// Empty when all quota fetches succeeded.
+    public var quotaNotes: [String]
     public var coach: [Insight]
     public var fuel: FuelGauge?
     public init(generatedAt: Date, menu: MenuSummary, overview: Overview, habits: Habits,
                 projects: [ProjectStat], models: [ModelStat], cache: CacheStat,
-                quota: [QuotaWindow], coach: [Insight], fuel: FuelGauge?) {
+                quota: [QuotaWindow], coach: [Insight], fuel: FuelGauge?,
+                quotaNotes: [String] = []) {
         self.generatedAt = generatedAt; self.menu = menu; self.overview = overview; self.habits = habits
         self.projects = projects; self.models = models; self.cache = cache; self.quota = quota
-        self.coach = coach; self.fuel = fuel
+        self.coach = coach; self.fuel = fuel; self.quotaNotes = quotaNotes
     }
 }

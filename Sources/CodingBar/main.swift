@@ -1,10 +1,27 @@
 import AppKit
 import CodingBarCore
 
+/// Bridges the async QuotaService to this synchronous CLI entry point. The Task
+/// runs on the cooperative pool (network I/O off the main thread) while the
+/// semaphore blocks; no deadlock because the actor/URLSession never need main.
+/// Keeps top-level code synchronous so AppKit's `app.run()` and `assumeIsolated`
+/// stay valid for the GUI path.
+final class QuotaBox: @unchecked Sendable { var windows: [QuotaWindow] = []; var notes: [String] = [] }
+func fetchQuotaBlocking() -> QuotaBox {
+    let box = QuotaBox()
+    let sem = DispatchSemaphore(value: 0)
+    Task { let r = await QuotaService.shared.current(); box.windows = r.windows; box.notes = r.notes; sem.signal() }
+    sem.wait()
+    return box
+}
+
 // Headless mode: print the computed snapshot as JSON and exit. Lets us verify the
 // data layer against real local logs without launching the GUI.
 if CommandLine.arguments.contains("--dump-json") {
-    let snap = Aggregator.run()   // was: Snapshot.sample()
+    // Fetch live quota (Claude + Codex usage APIs) then aggregate local data.
+    let quota = fetchQuotaBlocking()
+    var snap = Aggregator.run(quota: quota.windows)
+    snap.quotaNotes = quota.notes
     let enc = JSONEncoder()
     enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     enc.dateEncodingStrategy = .iso8601
