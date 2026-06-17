@@ -7,10 +7,11 @@ enum RenderDebug {
     @MainActor
     static func renderMenuBar(to path: String) {
         let samples = [
-            MenuSummary(metric: .tokens, primaryText: "1.2M",  quotaPercent: 0.63, active: true,  throughput: 1400),
-            MenuSummary(metric: .cost,   primaryText: "$4.20", quotaPercent: 0.41, active: false, throughput: 0),
-            MenuSummary(metric: .tokens, primaryText: "27.1M", quotaPercent: 0.17, active: false, throughput: 0),
-            MenuSummary(metric: .tokens, primaryText: "500K",  quotaPercent: nil,  active: false, throughput: 0),
+            MenuSummary(metric: .tokens, primaryText: "1.2M",   quotaPercent: 0.63, active: true,  throughput: 1400),
+            MenuSummary(metric: .cost,   primaryText: "$4.20",  quotaPercent: 0.41, active: false, throughput: 0),
+            MenuSummary(metric: .tokens, primaryText: "27.1M",  quotaPercent: 0.17, active: false, throughput: 0),
+            MenuSummary(metric: .tokens, primaryText: "224.6M", quotaPercent: 0.44, active: false, throughput: 0),
+            MenuSummary(metric: .tokens, primaryText: "500K",   quotaPercent: nil,  active: false, throughput: 0),
         ]
         let view = HStack(spacing: 30) {
             ForEach(Array(samples.enumerated()), id: \.offset) { _, m in

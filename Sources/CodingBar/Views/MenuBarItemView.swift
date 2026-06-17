@@ -23,7 +23,11 @@ struct MenuBarItemView: View {
                 // slightly-gray 85%-alpha labelColor.
                 .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
 
-            VStack(alignment: .leading, spacing: 0) {
+            // Trailing-aligned: line2's meter right edge tracks the number's right
+            // edge. When line2 needs more room than the number (e.g. a narrow
+            // number + wide %), the block grows rather than overflowing — the
+            // number floats right to stay aligned; nothing spills into the icon.
+            VStack(alignment: .trailing, spacing: 0) {
                 Text(menu.primaryText)
                     .font(Theme.menuBarFont)
                     .foregroundStyle(Color(nsColor: .labelColor))
@@ -33,7 +37,7 @@ struct MenuBarItemView: View {
                     })
 
                 if let pct = menu.quotaPercent {
-                    line2(pct: pct).frame(width: max(line1Width, 1))
+                    line2(pct: pct)
                 }
             }
             .onPreferenceChange(WidthKey.self) { line1Width = $0 }
@@ -49,18 +53,18 @@ struct MenuBarItemView: View {
     // lines up with the number above and never overflows to the right.
     private func line2(pct: Double) -> some View {
         let used = 1 - pct
-        return HStack(spacing: 3) {
+        return HStack(spacing: 0) {
             Text("\(Int((used * 100).rounded()))%")
                 .font(Theme.menuBarFont)
                 .foregroundStyle(Color(nsColor: .labelColor).opacity(0.6))
                 .fixedSize()
-            Spacer(minLength: 2)
+            Spacer(minLength: 4)
             // Pull in by the monospaced glyph's trailing side-bearing (~1pt) so the
             // meter's right edge sits on the number's ink, not its layout box.
             QuotaSegMeter(used: used, health: pct, colorScheme: colorScheme)
                 .padding(.trailing, 1)
         }
-        .frame(width: max(line1Width, 1), alignment: .trailing)
+        .frame(minWidth: max(line1Width, 1), alignment: .trailing)
     }
 }
 
