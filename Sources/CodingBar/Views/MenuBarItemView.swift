@@ -39,22 +39,26 @@ struct MenuBarItemView: View {
         .fixedSize()
     }
 
-    @ViewBuilder
+    // `pct` is the remaining fraction of the menu window (Claude 5h). We render
+    // it as *used %* per user preference; the bar fills with usage and is colored
+    // by health (low usage = green, high usage = red).
     private func line2(pct: Double) -> some View {
-        HStack(spacing: 0) {
-            Text("\(Int((pct * 100).rounded()))%")
+        let used = 1 - pct
+        return HStack(spacing: 0) {
+            Text("\(Int((used * 100).rounded()))%")
                 .font(Theme.menuBarFont)
                 .foregroundStyle(Color(nsColor: .labelColor).opacity(0.6))
                 .fixedSize()
             Spacer(minLength: 2)
-            QuotaBarView(remaining: pct, colorScheme: colorScheme)
+            QuotaBarView(used: used, health: pct, colorScheme: colorScheme)
         }
     }
 }
 
-// MARK: - Vertical quota bar (3pt wide, 11pt tall, fills from bottom)
+// MARK: - Vertical quota bar (3pt wide, 11pt tall, fills from bottom with usage)
 private struct QuotaBarView: View {
-    let remaining: Double
+    let used: Double      // fill height
+    let health: Double    // remaining fraction → color
     let colorScheme: ColorScheme
 
     var body: some View {
@@ -63,8 +67,8 @@ private struct QuotaBarView: View {
                 .fill(Theme.quotaTrack(scheme: colorScheme))
                 .frame(width: 3, height: 11)
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(Theme.quotaColor(remaining))
-                .frame(width: 3, height: max(11 * remaining, 1.5))
+                .fill(Theme.quotaColor(health))
+                .frame(width: 3, height: max(11 * used, 1.5))
         }
         .frame(width: 3, height: 11)
     }

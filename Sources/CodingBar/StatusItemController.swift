@@ -39,7 +39,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: PanelView(store: store))
+        let host = NSHostingController(rootView: PanelView(store: store))
+        // Let the popover size itself to the SwiftUI content, and resize when the
+        // active tab changes height (no fixed/clipped panel).
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {

@@ -70,31 +70,46 @@ struct HBar: View {
     }
 }
 
-// MARK: - Quota row
+// MARK: - Quota provider group header (Claude / Codex)
+
+struct QuotaGroupHeader: View {
+    let provider: Provider
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(provider == .claude ? Theme.claudeColor : Theme.codexColor)
+                .frame(width: 7, height: 7)
+            Text(provider == .claude ? "Claude" : "Codex")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(Theme.primaryText)
+        }
+    }
+}
+
+// MARK: - Quota row (rendered indented under its provider group)
+// Shows *used* %, not remaining: bar fills with usage, colored by health
+// (low usage = green, high usage = red). Label is just the window (5h / 7d / …).
 
 struct QuotaRow: View {
     let window: QuotaWindow
     var now: Date = Date()
-    private var providerColor: Color { window.provider == .claude ? Theme.claudeColor : Theme.codexColor }
-    private var label: String { (window.provider == .claude ? "Claude " : "Codex ") + window.label }
+    private var used: Double { 1 - window.remaining }
+    private var healthColor: Color { Theme.quotaColor(window.remaining) }
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Circle().fill(providerColor).frame(width: 7, height: 7)
-                Text(label).font(.system(size: 12)).foregroundStyle(Theme.dimText)
-                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
-            }
-            .frame(width: 116, alignment: .leading)
-            HBar(fraction: window.remaining, color: Theme.quotaColor(window.remaining))
-            Text("\(Int((window.remaining*100).rounded()))%")
+            Text(window.label).font(.system(size: 12)).foregroundStyle(Theme.dimText)
+                .lineLimit(1)
+                .frame(width: 76, alignment: .leading)
+            HBar(fraction: used, color: healthColor)
+            Text("\(Int((used*100).rounded()))%")
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
-                .foregroundStyle(Theme.quotaColor(window.remaining))
-                .frame(width: 34, alignment: .trailing)
+                .foregroundStyle(healthColor)
+                .frame(width: 38, alignment: .trailing)
             Text(Panel.reset(window.resetAt, now: now))
                 .font(.system(size: 10.5).monospacedDigit())
                 .foregroundStyle(Theme.faintText)
                 .frame(width: 40, alignment: .trailing)
         }
+        .padding(.leading, 13)   // indent under the provider header
     }
 }
 

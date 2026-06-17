@@ -149,8 +149,10 @@ public enum Aggregator {
             primaryText = "\(totalTodayTokens)"
         }
 
-        // Menu bar shows the most-depleted window across both providers.
-        let quotaPercent: Double? = quota.tightestRemaining
+        // Menu bar shows one fixed window (Claude 5h preferred). quotaPercent is
+        // the *remaining* fraction (drives bar fill + color); the view renders it
+        // as "used %".
+        let quotaPercent: Double? = quota.menuWindow?.remaining
 
         // ── Insight pillars ──────────────────────────────────────────────────
 

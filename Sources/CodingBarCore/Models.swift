@@ -75,9 +75,17 @@ public struct QuotaWindow: Codable, Sendable, Identifiable {
 }
 
 public extension Array where Element == QuotaWindow {
-    /// The most-depleted window's remaining fraction (drives the menu-bar bar),
-    /// nil when there is no quota data.
+    /// The most-depleted window's remaining fraction, nil when there is no data.
     var tightestRemaining: Double? { map(\.remaining).min() }
+
+    /// The single window surfaced in the menu bar: Claude 5h preferred, else
+    /// Codex 5h, else the most-depleted window. Keeps the menu bar meaning one
+    /// fixed, predictable thing ("how much of my Claude 5h window is used").
+    var menuWindow: QuotaWindow? {
+        first { $0.provider == .claude && $0.label == "5h" }
+            ?? first { $0.provider == .codex && $0.label == "5h" }
+            ?? self.min { $0.remaining < $1.remaining }
+    }
 }
 
 public struct CacheStat: Codable, Sendable {

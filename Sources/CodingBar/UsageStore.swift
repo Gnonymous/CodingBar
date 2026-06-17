@@ -50,7 +50,7 @@ final class UsageStore: ObservableObject {
             var snap = self.snapshot
             snap.quota = result.windows
             snap.quotaNotes = result.notes
-            snap.menu.quotaPercent = result.windows.tightestRemaining
+            snap.menu.quotaPercent = result.windows.menuWindow?.remaining
             self.snapshot = snap
         }
     }

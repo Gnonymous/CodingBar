@@ -106,13 +106,14 @@ struct OverviewTab: View {
 
             PanelDivider()
 
-            // 额度
-            VStack(alignment: .leading, spacing: 10) {
-                SectionHeader("额度")
+            // 额度 — grouped by provider (Claude / Codex), each window shows 已用%
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "额度 · 已用") { Text("剩余至重置").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.faintText) }
                 if snap.quota.isEmpty && snap.quotaNotes.isEmpty {
                     Text("暂无可读取的额度数据").font(.system(size: 12)).foregroundStyle(Theme.faintText)
                 } else {
-                    ForEach(snap.quota) { QuotaRow(window: $0, now: snap.generatedAt) }
+                    quotaGroup(.claude)
+                    quotaGroup(.codex)
                     ForEach(snap.quotaNotes, id: \.self) { note in
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -138,6 +139,17 @@ struct OverviewTab: View {
             }
         }
         .padding(.horizontal, Panel.hPad).padding(.top, 14).padding(.bottom, 16)
+    }
+
+    @ViewBuilder
+    private func quotaGroup(_ provider: Provider) -> some View {
+        let windows = snap.quota.filter { $0.provider == provider }
+        if !windows.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                QuotaGroupHeader(provider: provider)
+                ForEach(windows) { QuotaRow(window: $0, now: snap.generatedAt) }
+            }
+        }
     }
 
     private var deltaView: some View {

@@ -33,11 +33,10 @@ struct PanelView: View {
             header
             tabBar
             PanelDivider()
-            if scrollable {
-                ScrollView { tabContent }.frame(maxHeight: 540)
-            } else {
-                tabContent
-            }
+            // Natural height: the popover sizes itself to whichever tab is active
+            // (NSHostingController .preferredContentSize), so every tab shows in
+            // full and the panel re-sizes when you switch tabs.
+            tabContent
             footer
         }
         .frame(width: Panel.width)
@@ -79,8 +78,10 @@ struct PanelView: View {
                             ? AnyView(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.08))
                                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline, lineWidth: 1)))
                             : AnyView(Color.clear))
+                        .contentShape(Rectangle())   // whole pill is tappable, not just the glyphs
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()                // no blue macOS focus ring left behind
             }
         }
         .padding(3)
