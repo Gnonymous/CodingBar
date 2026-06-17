@@ -188,11 +188,20 @@ public struct Overview: Codable, Sendable {
     public var output: OutputStat
     /// Percent change vs the previous equal-length period; nil when there's no
     /// prior period to compare (the pill is hidden, mirroring the prototype).
+    /// `deltaVsPrevPct` is the cost change; `deltaTokensPct` is the token change —
+    /// the panel picks whichever matches the active display metric.
     public var deltaVsPrevPct: Double?
+    public var deltaTokensPct: Double?
     public var trend: [DayPoint]
-    public init(range: Range, spend: PeriodTotals, output: OutputStat, deltaVsPrevPct: Double?, trend: [DayPoint]) {
+    public init(range: Range, spend: PeriodTotals, output: OutputStat,
+                deltaVsPrevPct: Double?, deltaTokensPct: Double? = nil, trend: [DayPoint]) {
         self.range = range; self.spend = spend; self.output = output
-        self.deltaVsPrevPct = deltaVsPrevPct; self.trend = trend
+        self.deltaVsPrevPct = deltaVsPrevPct; self.deltaTokensPct = deltaTokensPct; self.trend = trend
+    }
+
+    /// Period-over-period change for the given display metric (nil = hide pill).
+    public func delta(for metric: MenuMetric) -> Double? {
+        metric == .cost ? deltaVsPrevPct : deltaTokensPct
     }
 }
 

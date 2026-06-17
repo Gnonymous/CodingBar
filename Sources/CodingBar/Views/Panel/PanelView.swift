@@ -58,7 +58,7 @@ struct PanelView: View {
 
     @ViewBuilder private var tabContent: some View {
         switch tab {
-        case 1: CostTab(snap: snap)
+        case 1: CostTab(snap: snap, metric: store.menuMetric)
         case 2: InsightsTab(store: store)
         default: OverviewTab(store: store, onShowInsights: { tab = 2 })
         }
@@ -77,6 +77,7 @@ struct PanelView: View {
             .padding(.leading, 6).padding(.trailing, 7).padding(.vertical, 2)
             .background(Capsule().fill(dc.hover))
             Spacer()
+            metricToggle
             Button { doRefresh() } label: {
                 Text("⟳").font(.system(size: 14)).foregroundStyle(dc.fg3)
                     .rotationEffect(.degrees(refreshSpin))
@@ -85,6 +86,23 @@ struct PanelView: View {
             .buttonStyle(.plain).focusEffectDisabled()
         }
         .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
+    }
+
+    /// Metric toggle (花费 ⇄ Token) — a bare glyph styled like the refresh button,
+    /// kept muted so it reads as a quiet affordance, not a loud control. The glyph
+    /// shows the *current* metric; tapping flips both the panel and the menu bar.
+    private var metricToggle: some View {
+        let isCost = store.menuMetric == .cost
+        return Button { store.toggleMetric() } label: {
+            Text(isCost ? "$" : "#")
+                .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(dc.fg2)
+                .frame(width: 13)
+                .padding(.horizontal, 3).padding(.vertical, 1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).focusEffectDisabled()
+        .help(isCost ? "当前显示：花费 · 点击切换为 Token" : "当前显示：Token · 点击切换为花费")
     }
 
     /// CodingBar's own mark: the pulse heartbeat on an accent tile (our identity,

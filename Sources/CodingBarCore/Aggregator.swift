@@ -47,6 +47,11 @@ public enum Aggregator {
             for r in allRecords where r.timestamp >= a && r.timestamp < b { c += Pricing.cost(model: r.model, tokens: r.tokens) }
             return c
         }
+        func tokensTotal(from a: Date, to b: Date) -> Int {
+            var t = 0
+            for r in allRecords where r.timestamp >= a && r.timestamp < b { t += r.tokens.total }
+            return t
+        }
 
         // Git output for all ranges in one pass per repo, scanning the most-active
         // cwds over the widest (month) window.
@@ -201,11 +206,14 @@ public enum Aggregator {
             let prevStart = cal.date(byAdding: .day, value: -periodDays, to: start) ?? start
             let prev = cost(from: prevStart, to: start)
             let delta: Double? = prev > 0 ? (s.cost - prev) / prev * 100 : nil
+            let prevTok = tokensTotal(from: prevStart, to: start)
+            let deltaTok: Double? = prevTok > 0 ? Double(s.tokens.total - prevTok) / Double(prevTok) * 100 : nil
             return Overview(
                 range: range,
                 spend: PeriodTotals(cost: s.cost, tokens: s.tokens, sessions: s.cwds.count),
                 output: output,
                 deltaVsPrevPct: delta,
+                deltaTokensPct: deltaTok,
                 trend: trend
             )
         }

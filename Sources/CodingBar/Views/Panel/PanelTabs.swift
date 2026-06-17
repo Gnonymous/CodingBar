@@ -10,6 +10,7 @@ struct OverviewTab: View {
 
     private var snap: Snapshot { store.snapshot }
     private var range: Range { store.selectedRange }
+    private var metric: MenuMetric { store.menuMetric }
     private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
     private var rangeLabel: String { switch range { case .today: "今日"; case .week: "近 7 天"; case .month: "近 30 天" } }
 
@@ -44,16 +45,16 @@ struct OverviewTab: View {
         DCSection(bottomPad: 13) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    DCLabel("花费"); Spacer()
+                    DCLabel(metric == .cost ? "花费" : "Token"); Spacer()
                     DCRangeSeg(selected: range, onSelect: store.setRange)
                 }
                 .padding(.bottom, 9)
 
                 HStack(alignment: .bottom, spacing: 9) {
-                    Text(Panel.usd(ov.spend.cost))
+                    Text(metric == .cost ? Panel.usd(ov.spend.cost) : Panel.tok(ov.spend.tokens.total))
                         .font(.system(size: 34, weight: .bold)).monospacedDigit().tracking(-0.85)
                         .foregroundStyle(dc.fg)
-                    if let dp = ov.deltaVsPrevPct { deltaPill(dp).padding(.bottom, 4) }
+                    if let dp = ov.delta(for: metric) { deltaPill(dp).padding(.bottom, 4) }
                 }
 
                 HStack(spacing: 6) {
@@ -64,7 +65,7 @@ struct OverviewTab: View {
 
                 if ov.trend.count >= 3 {
                     VStack(spacing: 1) {
-                        DCSparkline(values: ov.trend.map { $0.cost })
+                        DCSparkline(values: metric == .cost ? ov.trend.map { $0.cost } : ov.trend.map { Double($0.tokens) })
                         HStack {
                             Text(startLabel)
                             Spacer()
@@ -78,7 +79,7 @@ struct OverviewTab: View {
                 }
 
                 HStack(spacing: 6) {
-                    effCard(effLines, "行 / $")
+                    effCard(effLines, metric == .cost ? "行 / $" : "行 / M tok")
                     effCard(effPerCommit, "每 commit")
                     effCard(effCache, "缓存抵扣", emphasize: true)
                 }
@@ -103,22 +104,54 @@ struct OverviewTab: View {
     private func md(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "M/d"; return f.string(from: d) }
 
     private var projection: String {
-        let cost = ov.spend.cost
-        switch range {
-        case .today:
-            if isBurning {
-                return "当前 ~\(Panel.usd0(snap.burnPerMin * 60))/小时 · 预计今日 ~\(Panel.usd0(cost * 1.32))"
+        switch metric {
+        case .cost:
+            let cost = ov.spend.cost
+            switch range {
+            case .today:
+                if isBurning {
+                    return "当前 ~\(Panel.usd0(snap.burnPerMin * 60))/小时 · 预计今日 ~\(Panel.usd0(cost * 1.32))"
+                }
+                return "已停止燃烧 · 今日累计 \(Panel.usd(cost))"
+            case .week:
+                return "日均 ~\(Panel.usd0(cost / 7)) · 本月预计 ~\(Panel.usd0(cost / 7 * 30))"
+            case .month:
+                return "日均 ~\(Panel.usd0(cost / 30)) · 月度合计 \(Panel.usd0(cost))"
             }
-            return "已停止燃烧 · 今日累计 \(Panel.usd(cost))"
-        case .week:
-            return "日均 ~\(Panel.usd0(cost / 7)) · 本月预计 ~\(Panel.usd0(cost / 7 * 30))"
-        case .month:
-            return "日均 ~\(Panel.usd0(cost / 30)) · 月度合计 \(Panel.usd0(cost))"
+        case .tokens:
+            let tk = ov.spend.tokens.total
+            switch range {
+            case .today:
+                if isBurning {
+                    return "当前 ~\(Panel.tok(aggTput * 3600))/小时 · 预计今日 ~\(Panel.tok(Int(Double(tk) * 1.32)))"
+                }
+                return "已停止燃烧 · 今日累计 \(Panel.tok(tk))"
+            case .week:
+                return "日均 ~\(Panel.tok(tk / 7)) · 本月预计 ~\(Panel.tok(tk / 7 * 30))"
+            case .month:
+                return "日均 ~\(Panel.tok(tk / 30)) · 月度合计 \(Panel.tok(tk))"
+            }
         }
     }
 
-    private var effLines: String { ov.spend.cost > 0 ? Panel.int(Int((Double(ov.output.added) / ov.spend.cost).rounded())) : "0" }
-    private var effPerCommit: String { ov.output.commits > 0 ? Panel.usd0(ov.spend.cost / Double(ov.output.commits)) : "$0" }
+    // 行 / $ (cost) or 行 / 百万 token (tokens).
+    private var effLines: String {
+        switch metric {
+        case .cost:
+            return ov.spend.cost > 0 ? Panel.int(Int((Double(ov.output.added) / ov.spend.cost).rounded())) : "0"
+        case .tokens:
+            let mtok = Double(ov.spend.tokens.total) / 1_000_000
+            return mtok > 0 ? Panel.int(Int((Double(ov.output.added) / mtok).rounded())) : "0"
+        }
+    }
+    // $ per commit (cost) or tokens per commit (tokens) — the per-commit consumption.
+    private var effPerCommit: String {
+        guard ov.output.commits > 0 else { return metric == .cost ? "$0" : "0" }
+        switch metric {
+        case .cost:   return Panel.usd0(ov.spend.cost / Double(ov.output.commits))
+        case .tokens: return Panel.tok(ov.spend.tokens.total / ov.output.commits)
+        }
+    }
     private var effCache: String { "\(Int((snap.cache.hitRate * 100).rounded()))%" }
 
     private func effCard(_ value: String, _ label: String, emphasize: Bool = false) -> some View {
@@ -149,7 +182,7 @@ struct OverviewTab: View {
 
                 if isBurning {
                     HStack(alignment: .bottom, spacing: 7) {
-                        Text(Panel.usd(snap.burnPerMin))
+                        Text(metric == .cost ? Panel.usd(snap.burnPerMin) : Panel.tok(aggTput * 60))
                             .font(.system(size: 23, weight: .bold)).monospacedDigit().tracking(-0.46)
                             .foregroundStyle(dc.fg)
                         Text("/ 分钟").font(.system(size: 11)).foregroundStyle(dc.fg3).padding(.bottom, 2)
@@ -341,20 +374,30 @@ struct OverviewTab: View {
 struct CostTab: View {
     @Environment(\.dc) private var dc
     let snap: Snapshot
+    var metric: MenuMetric = .cost
     @State private var modelsExpanded = false
     @State private var projectsExpanded = false
     private let modelCap = 4
     private let projectCap = 5
     private var maxModelCost: Double { max(snap.models.map { $0.cost }.max() ?? 1, 1e-9) }
     private var maxProjCost: Double { max(snap.projects.map { $0.cost }.max() ?? 1, 1e-9) }
-    private var shownModels: [ModelStat] { modelsExpanded ? snap.models : Array(snap.models.prefix(modelCap)) }
-    private var shownProjects: [ProjectStat] { projectsExpanded ? snap.projects : Array(snap.projects.prefix(projectCap)) }
+    private var maxModelTokens: Double { max(Double(snap.models.map { $0.tokens.total }.max() ?? 1), 1) }
+    private var maxProjTokens: Double { max(Double(snap.projects.map { $0.tokens.total }.max() ?? 1), 1) }
+    // Rank by the active metric so the biggest consumer is always on top.
+    private var sortedModels: [ModelStat] {
+        metric == .cost ? snap.models : snap.models.sorted { $0.tokens.total > $1.tokens.total }
+    }
+    private var sortedProjects: [ProjectStat] {
+        metric == .cost ? snap.projects : snap.projects.sorted { $0.tokens.total > $1.tokens.total }
+    }
+    private var shownModels: [ModelStat] { modelsExpanded ? sortedModels : Array(sortedModels.prefix(modelCap)) }
+    private var shownProjects: [ProjectStat] { projectsExpanded ? sortedProjects : Array(sortedProjects.prefix(projectCap)) }
 
     var body: some View {
         VStack(spacing: 0) {
             DCSection {
                 VStack(alignment: .leading, spacing: 0) {
-                    DCLabel("按模型 · 累计花费").padding(.bottom, 11)
+                    DCLabel(metric == .cost ? "按模型 · 累计花费" : "按模型 · 累计 Token").padding(.bottom, 11)
                     VStack(alignment: .leading, spacing: 11) {
                         ForEach(shownModels) { modelRow($0) }
                     }
@@ -366,7 +409,7 @@ struct CostTab: View {
             }
             DCSection {
                 VStack(alignment: .leading, spacing: 0) {
-                    DCLabel("按项目 · 累计花费").padding(.bottom, 11)
+                    DCLabel(metric == .cost ? "按项目 · 累计花费" : "按项目 · 累计 Token").padding(.bottom, 11)
                     VStack(alignment: .leading, spacing: 9) {
                         ForEach(shownProjects) { projRow($0) }
                     }
@@ -393,14 +436,19 @@ struct CostTab: View {
 
     private func modelRow(_ m: ModelStat) -> some View {
         let name = (m.provider == .claude ? "Claude " : "Codex ") + Pricing.displayName(forCanonicalKey: m.model)
-        let share = max(3.0, m.cost / maxModelCost * 100)
+        let metricVal = metric == .cost ? m.cost : Double(m.tokens.total)
+        let maxVal = metric == .cost ? maxModelCost : maxModelTokens
+        let share = max(3.0, metricVal / maxVal * 100)
         return VStack(spacing: 4) {
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 2).fill(dc.provider(m.provider)).frame(width: 6, height: 6)
                 Text(name).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg)
                 Spacer()
-                Text(Panel.tok(m.tokens.total)).font(.system(size: 11)).monospacedDigit().foregroundStyle(dc.fg3)
-                Text(Panel.usd(m.cost)).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                // secondary (the other metric) then primary (the active metric, bold)
+                Text(metric == .cost ? Panel.tok(m.tokens.total) : Panel.usd(m.cost))
+                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(dc.fg3)
+                Text(metric == .cost ? Panel.usd(m.cost) : Panel.tok(m.tokens.total))
+                    .font(.system(size: 11, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(dc.fg).frame(width: 66, alignment: .trailing)
             }
             GeometryReader { g in
@@ -415,7 +463,9 @@ struct CostTab: View {
     }
 
     private func projRow(_ p: ProjectStat) -> some View {
-        let share = max(3.0, p.cost / maxProjCost * 100)
+        let metricVal = metric == .cost ? p.cost : Double(p.tokens.total)
+        let maxVal = metric == .cost ? maxProjCost : maxProjTokens
+        let share = max(3.0, metricVal / maxVal * 100)
         return HStack(spacing: 9) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(p.name).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg).lineLimit(1)
@@ -429,7 +479,8 @@ struct CostTab: View {
                 .frame(height: 3)
             }
             VStack(alignment: .trailing, spacing: 1) {
-                Text(Panel.usd(p.cost)).font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(dc.fg)
+                Text(metric == .cost ? Panel.usd(p.cost) : Panel.tok(p.tokens.total))
+                    .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(dc.fg)
                 Text(lastLabel(p.lastActive)).font(.system(size: 9)).foregroundStyle(dc.fg3)
             }
         }

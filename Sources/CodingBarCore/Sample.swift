@@ -26,6 +26,7 @@ public extension Snapshot {
                 spend: PeriodTotals(cost: 4.20, tokens: TokenBreakdown(input: 280_000, output: 95_000, cacheRead: 820_000, cacheWrite: 60_000), sessions: 7),
                 output: OutputStat(added: 1240, removed: 180, commits: 3, files: 18),
                 deltaVsPrevPct: 12,
+                deltaTokensPct: 9,
                 trend: trend),
             habits: Habits(
                 toolMix: ToolMix(write: 52, read: 28, run: 14, search: 6),

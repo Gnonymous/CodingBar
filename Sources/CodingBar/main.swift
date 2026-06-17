@@ -48,10 +48,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < Comma
     let args = CommandLine.arguments
     let path = args[i + 1]
     let tab = Int(args[i + 2]) ?? 0
-    // Optional: --render-panel <path> <tab> [light|dark] [healthy|degraded|nosession|empty]
+    // Optional: --render-panel <path> <tab> [light|dark] [healthy|degraded|nosession|empty] [cost|tokens]
     let dark = (i + 3 < args.count) ? (args[i + 3].lowercased() != "light") : true
     let scenario = (i + 4 < args.count) ? args[i + 4] : "healthy"
-    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab, dark: dark, scenario: scenario) }
+    let metric: MenuMetric = (i + 5 < args.count && args[i + 5].lowercased().hasPrefix("tok")) ? .tokens : .cost
+    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab, dark: dark, scenario: scenario, metric: metric) }
     exit(0)
 }
 
