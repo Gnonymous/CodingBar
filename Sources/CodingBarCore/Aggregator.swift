@@ -53,10 +53,21 @@ public enum Aggregator {
         }
 
         // Git output for all ranges in one pass per repo, scanning the most-active
-        // cwds over the widest (month) window.
+        // cwds over the widest (month) window. A repo only worked in *today* — a
+        // freshly-created project, or a moved/renamed folder whose new path hasn't
+        // accumulated enough records to out-rank older ones — would be cut by the
+        // latency prefix, and its commits would vanish from the "today" bucket. So
+        // today's cwds are prepended unconditionally: the selection criterion
+        // (monthly volume) must not exclude a repo that the "today" bucket reports.
         let monthSpend = spend(since: monthStart)
         let monthCwds = monthSpend.cwds.sorted { $0.value > $1.value }.map { $0.key }
-        let gitRanges = GitCorrelator.buildRanges(cwds: monthCwds, now: now)
+        var todayCwds: [String] = []
+        var seenCwd = Set<String>()
+        for r in todayRecords where !r.cwd.isEmpty {
+            if seenCwd.insert(r.cwd).inserted { todayCwds.append(r.cwd) }
+        }
+        let scanCwds = todayCwds + monthCwds.prefix(10).filter { !seenCwd.contains($0) }
+        let gitRanges = GitCorrelator.buildRanges(cwds: scanCwds, now: now)
 
         // trend is always last 7 calendar days, independent of the range pill
         var trend: [DayPoint] = []

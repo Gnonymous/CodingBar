@@ -49,7 +49,9 @@ enum GitCorrelator {
     /// bucket additions/deletions/commits/files into today / last-7d / last-30d
     /// (cumulative). Computing all three together keeps the panel ranges instant
     /// AND mutually consistent — no per-tap recompute, no async race.
-    /// `cwds` should be most-active first; only the top 10 are scanned for latency.
+    /// The caller passes today's cwds first (scanned unconditionally) followed by
+    /// the top monthly-volume cwds; the `prefix` below is a latency backstop sized
+    /// to fit that union without re-truncating today's repos.
     static func buildRanges(cwds: [String], now: Date) -> RangeOutputs {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: now)
@@ -65,7 +67,7 @@ enum GitCorrelator {
         var wA = 0, wR = 0, wC = 0; var wF = Set<String>()
         var mA = 0, mR = 0, mC = 0; var mF = Set<String>()
 
-        for cwd in cwds.prefix(10) {
+        for cwd in cwds.prefix(20) {
             guard !cwd.isEmpty, FileManager.default.fileExists(atPath: cwd), isGitRepo(at: cwd) else { continue }
             // "@<unix-ts>" header before each commit, then its numstat rows.
             let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)",
