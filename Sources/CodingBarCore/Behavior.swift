@@ -68,18 +68,18 @@ enum Behavior {
         )
     }
 
-    // MARK: - Heatmap (last 30 days, 7 rows Mon-Sun × 12 cols 2h buckets)
+    // MARK: - Heatmap (last 7 days, 7 rows Mon-Sun × 12 cols 2h buckets)
 
     static func heatmap(from records: [RawRecord], now: Date) -> Heatmap {
         let cal = Calendar.current
-        guard let thirtyDaysAgo = cal.date(byAdding: .day, value: -30, to: now) else {
+        guard let sevenDaysAgo = cal.date(byAdding: .day, value: -7, to: now) else {
             return Heatmap(cells: Array(repeating: Array(repeating: 0, count: 12), count: 7), peakLabel: "")
         }
 
         var grid: [[Int]] = Array(repeating: Array(repeating: 0, count: 12), count: 7)
 
         for r in records {
-            guard r.timestamp >= thirtyDaysAgo && r.timestamp <= now else { continue }
+            guard r.timestamp >= sevenDaysAgo && r.timestamp <= now else { continue }
             let weekday = cal.component(.weekday, from: r.timestamp)
             // Convert Sunday=1..Saturday=7 → Mon=0..Sun=6
             let row = (weekday + 5) % 7
