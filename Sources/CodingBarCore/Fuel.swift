@@ -2,24 +2,69 @@ import Foundation
 
 enum FuelCalculator {
 
-    // Maximum context window by model family
-    static func maxTokens(forModel model: String) -> Int {
-        let lower = model.lowercased()
-        if lower.contains("[1m]") || lower.contains("-1m") || lower.contains(" 1m") {
-            return 1_000_000   // 1M-context variants (e.g. claude-opus-4-8[1m])
-        }
-        return 200_000  // default Claude context window
-    }
-
     private static func usedTokens(for tokens: TokenBreakdown) -> Int {
         tokens.input + tokens.cacheRead + tokens.cacheWrite
     }
 
-    // Detect 1M-context models even when the model string lacks the marker:
-    // if the live context already exceeds the assumed window, it must be larger.
-    private static func effectiveMaxTokens(used: Int, model: String) -> Int {
-        let maxTok = maxTokens(forModel: model)
-        return used > maxTok ? 1_000_000 : maxTok
+    // MARK: - Context window resolution
+    //
+    // The hard part: Claude Code's transcript logs the *resolved* model id
+    // (`claude-opus-4-8`) and drops the `[1m]` marker that distinguishes the
+    // 1M-context variant — so the model string alone can't tell a 200k window from a
+    // 1M one. We combine three signals, most-reliable first:
+    //   1. an explicit [1m] marker when present (Codex keeps it; Claude drops it).
+    //   2. a per-family observed high-water mark. 1M context is an *account-level*
+    //      entitlement, so if ANY session of a family was ever seen above 200k, that
+    //      family's window must be 1M — which is what lets a small *current* Opus
+    //      session read against 1M despite its records carrying no marker. Keying on
+    //      family (not the global model setting) stays correct when the user switches
+    //      models: the family travels with each session's own records.
+    //
+    // We deliberately do NOT hardcode "Opus = 1M": that would bake in an entitlement
+    // a given user may not have, and *understating* fill (the dangerous direction)
+    // for users on the standard 200k window. Every family starts at the universal
+    // 200k standard and is upgraded to 1M only by that user's own observed usage —
+    // so the gauge adapts per account, not per a baked-in assumption.
+
+    private static let standardWindow = 200_000
+    private static let largeWindow    = 1_000_000
+
+    private static func family(of model: String) -> String {
+        let m = model.lowercased()
+        if m.contains("opus")   { return "opus" }
+        if m.contains("fable")  { return "fable" }
+        if m.contains("sonnet") { return "sonnet" }
+        if m.contains("haiku")  { return "haiku" }
+        if m.contains("gpt") || m.contains("codex") { return "gpt" }
+        return "other"
+    }
+
+    private static func hasMillionMarker(_ model: String) -> Bool {
+        let m = model.lowercased()
+        return m.contains("[1m]") || m.contains("-1m") || m.contains(" 1m")
+    }
+
+    /// Per-family context window after applying the observed high-water upgrade.
+    /// Built once per refresh from the full record set, then handed to the
+    /// per-session resolver so each session benefits from its family's whole history.
+    static func familyWindows(from records: [RawRecord]) -> [String: Int] {
+        var maxUsed: [String: Int] = [:]
+        for r in records {
+            let used = usedTokens(for: r.tokens)
+            let fam = family(of: r.model)
+            if used > (maxUsed[fam] ?? 0) { maxUsed[fam] = used }
+        }
+        var windows: [String: Int] = [:]
+        for (fam, used) in maxUsed {
+            windows[fam] = used > standardWindow ? largeWindow : standardWindow
+        }
+        return windows
+    }
+
+    /// Context window for one session's model, given the precomputed family windows.
+    static func contextWindow(for model: String, windows: [String: Int]) -> Int {
+        if hasMillionMarker(model) { return largeWindow }
+        return windows[family(of: model)] ?? standardWindow
     }
 
     /// Returns (gauge, active, throughput).
@@ -80,7 +125,8 @@ enum FuelCalculator {
         // (this is the full context fed to the model on that turn)
         let last = sorted.last!
         let usedTokens = usedTokens(for: last.tokens)
-        let maxTok = effectiveMaxTokens(used: usedTokens, model: last.model)
+        let windows = familyWindows(from: claudeRecords)
+        let maxTok = contextWindow(for: last.model, windows: windows)
 
         // Estimate remaining turns from average context GROWTH per turn so far
         // (total context / turns ≈ what each turn adds), far more realistic than
@@ -129,6 +175,9 @@ enum FuelCalculator {
 
         let minuteAgo = now.addingTimeInterval(-60)
 
+        // Family→window map from the full history (account-level 1M detection).
+        let windows = familyWindows(from: claudeRecords + codexRecords)
+
         // Burn rate: $ spent over the last minute (≈ $/min).
         var burn: Double = 0
         for r in claudeRecords where r.timestamp >= minuteAgo && r.timestamp <= now {
@@ -155,7 +204,7 @@ enum FuelCalculator {
                   now.timeIntervalSince(last.timestamp) <= 90 else { continue }
 
             let used = usedTokens(for: last.tokens)
-            let maxTok = effectiveMaxTokens(used: used, model: last.model)
+            let maxTok = contextWindow(for: last.model, windows: windows)
 
             let recentOut = sorted.filter { $0.timestamp >= minuteAgo }
                 .reduce(0) { $0 + $1.tokens.output }
