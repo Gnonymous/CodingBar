@@ -15,16 +15,6 @@
   <img src="docs/assets/social.png" width="840" alt="CodingBar — 你的 Claude Code 与 Codex 用量仪表盘，就在菜单栏" />
 </p>
 
-<p align="center">
-  <img src="docs/assets/menubar.png" width="760" alt="CodingBar 菜单栏 — 额度状态" />
-</p>
-
-<p align="center">
-  <img src="docs/assets/panel-overview.png" width="320" alt="CodingBar 面板 — 总览" />
-</p>
-
-<p align="center"><sub><em>截图由 <code>--render-panel</code> 基于样本数据渲染。</em></sub></p>
-
 <details>
 <summary><strong>更多视图 — 构成 · 洞察 · 浅色模式</strong></summary>
 <br/>
