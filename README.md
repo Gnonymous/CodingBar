@@ -1,8 +1,9 @@
 <h4 align="right"><strong>English</strong> | <a href="README_ZH.md">简体中文</a></h4>
 
 <div align="center">
+  <img src="docs/assets/logo.svg" width="120" height="120" alt="CodingBar logo" />
   <h1>CodingBar</h1>
-  <p><b>See what your AI coding agents actually did — from the macOS menu bar.</b></p>
+  <p><b>Track your AI coding agents' footprint — from the macOS menu bar.</b></p>
   <a href="https://github.com/Gnonymous/CodingBar/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Gnonymous/CodingBar/ci.yml?branch=main&style=flat-square&label=build" alt="Build"></a>
   <a href="https://github.com/Gnonymous/CodingBar/stargazers"><img src="https://img.shields.io/github/stars/Gnonymous/CodingBar?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/Gnonymous/CodingBar/releases"><img src="https://img.shields.io/github/v/tag/Gnonymous/CodingBar?label=version&style=flat-square" alt="Version"></a>

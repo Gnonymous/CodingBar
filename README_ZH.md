@@ -1,6 +1,7 @@
 <h4 align="right"><a href="README.md">English</a> | <strong>简体中文</strong></h4>
 
 <div align="center">
+  <img src="docs/assets/logo.svg" width="120" height="120" alt="CodingBar logo" />
   <h1>CodingBar</h1>
   <p><b>你的 AI 编程助手干了什么——看菜单栏就知道。</b></p>
   <a href="https://github.com/Gnonymous/CodingBar/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Gnonymous/CodingBar/ci.yml?branch=main&style=flat-square&label=build" alt="Build"></a>
