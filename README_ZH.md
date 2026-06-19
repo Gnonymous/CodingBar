@@ -12,7 +12,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/social.png" width="840" alt="CodingBar — 你的 Claude Code 与 Codex 用量仪表盘，就在菜单栏" />
+  <img src="docs/assets/social.png" width="100%" alt="CodingBar — 你的 Claude Code 与 Codex 用量仪表盘，就在菜单栏" />
 </p>
 
 <details>
