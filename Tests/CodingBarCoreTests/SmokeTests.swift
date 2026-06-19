@@ -142,6 +142,60 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(Behavior.bucket(toolName: "view_image"), \ToolMix.read)
     }
 
+    /// A Codex session that switches model mid-stream (`/model`) must attribute each
+    /// turn to the model in effect AT that turn, not freeze on the session's first one
+    /// (the `model == "unknown"` guard used to ignore every later turn_context).
+    func testCodexScannerTracksMidSessionModelSwitch() throws {
+        func line(_ o: [String: Any]) -> String { String(data: try! JSONSerialization.data(withJSONObject: o), encoding: .utf8)! }
+        func tc(ts: String, input: Int, output: Int) -> [String: Any] {
+            ["type": "event_msg", "timestamp": ts,
+             "payload": ["type": "token_count", "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": 0,
+                                                        "output_tokens": output, "reasoning_output_tokens": 0]]]]
+        }
+        let lines = [
+            line(["type": "session_meta", "payload": ["cwd": "/tmp/p"]]),
+            line(["type": "turn_context", "payload": ["model": "gpt-5.5-codex"]]),
+            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, output: 10)),   // → gpt-5.5-codex
+            line(["type": "turn_context", "payload": ["model": "gpt-5.4-codex"]]),
+            line(tc(ts: "2026-06-18T13:05:00.000Z", input: 250, output: 30)),   // → gpt-5.4-codex
+        ]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let recs = CodexScanner.parseFile(url)
+        XCTAssertEqual(recs.count, 2)
+        XCTAssertEqual(recs[0].model, "gpt-5.5-codex")
+        XCTAssertEqual(recs[1].model, "gpt-5.4-codex", "model after an in-session switch must update")
+    }
+
+    /// Two logged cwds inside the SAME repo (repo root + a subdir) must count the repo's
+    /// commits/files ONCE, not once per cwd. buildRanges now collapses cwds by their git
+    /// top-level; an unscoped `git log` per cwd previously double-counted shared repos.
+    func testGitRangesDeduplicateCwdsInSameRepo() throws {
+        let fm = FileManager.default
+        let repo = fm.temporaryDirectory.appendingPathComponent("repo-\(UUID().uuidString)")
+        let sub = repo.appendingPathComponent("Sources")
+        try fm.createDirectory(at: sub, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: repo) }
+
+        func git(_ args: [String]) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            p.arguments = ["-C", repo.path] + args
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run(); p.waitUntilExit()
+        }
+        git(["init", "-q"])
+        try "hello\n".write(to: sub.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        git(["add", "."])
+        git(["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "-m", "one", "--no-gpg-sign"])
+
+        let out = GitCorrelator.buildRanges(cwds: [repo.path, sub.path], now: Date())
+        XCTAssertEqual(out.today.commits, 1, "same-repo cwds must not double-count commits")
+        XCTAssertEqual(out.today.files, 1, "the one changed file must be counted once")
+    }
+
     func testGitRenamePathResolution() {
         XCTAssertEqual(GitCorrelator.resolveNumstatPath("src/{old.swift => new.swift}"), "src/new.swift")
         XCTAssertEqual(GitCorrelator.resolveNumstatPath("dir/{old => new}/f.swift"), "dir/new/f.swift")

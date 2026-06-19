@@ -37,9 +37,15 @@ enum GitCorrelator {
         return raw.components(separatedBy: "=>").last?.trimmingCharacters(in: .whitespaces) ?? raw
     }
 
-    private static func isGitRepo(at path: String) -> Bool {
-        let result = run(args: ["-C", path, "rev-parse", "--is-inside-work-tree"], timeout: 3.0)
-        return result?.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
+    /// The absolute top-level of the git work tree containing `path`, or nil if `path`
+    /// is not inside a repo. Used to collapse several logged `cwd`s that live in the
+    /// SAME repository (e.g. `repo` and `repo/Sources`) down to one repo, since each
+    /// would otherwise run an unscoped `git log` over the whole repo and count the same
+    /// commits again. Doubles as the is-a-repo check.
+    private static func gitToplevel(at path: String) -> String? {
+        guard let out = run(args: ["-C", path, "rev-parse", "--show-toplevel"], timeout: 3.0) else { return nil }
+        let top = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return top.isEmpty ? nil : top
     }
 
     public struct RangeOutputs: Sendable {
@@ -70,15 +76,27 @@ enum GitCorrelator {
         var wA = 0, wR = 0, wC = 0; var wF = Set<String>()
         var mA = 0, mR = 0, mC = 0; var mF = Set<String>()
 
+        // Collapse the candidate cwds to unique repositories by their git top-level,
+        // preserving first-seen order (the caller puts today's cwds first, so a repo
+        // seen today wins). Running one `git log` per cwd would otherwise count the
+        // same commits once per cwd whenever two cwds share a repo.
+        var repos: [String] = []
+        var seenRepos = Set<String>()
         for cwd in cwds.prefix(20) {
-            guard !cwd.isEmpty, FileManager.default.fileExists(atPath: cwd), isGitRepo(at: cwd) else { continue }
+            guard !cwd.isEmpty, FileManager.default.fileExists(atPath: cwd),
+                  let top = gitToplevel(at: cwd), !seenRepos.contains(top) else { continue }
+            seenRepos.insert(top)
+            repos.append(top)
+        }
+
+        for repo in repos {
             // "@<unix-ts>" header before each commit, then its numstat rows.
             // `--no-merges` drops merge commits so a merge's whole combined diff isn't
             // counted as fresh output (it still over-counts non-AI/hand-written commits
-            // in the cwd — the panel labels this as approximate git attribution).
+            // in the repo — the panel labels this as approximate git attribution).
             // `-M` detects renames so a moved file is one row (resolved to its new path
             // below) instead of a delete+add that double-counts it in the file set.
-            let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)", "--no-merges", "-M",
+            let out = run(args: ["-C", repo, "log", "--since=\(sinceStr)", "--no-merges", "-M",
                                  "--numstat", "--pretty=format:@%ct"], timeout: 6.0) ?? ""
             var ts: Double = 0
             for line in out.components(separatedBy: "\n") {
@@ -94,7 +112,7 @@ enum GitCorrelator {
                 let add = Int(parts[0].trimmingCharacters(in: .whitespaces)) ?? 0  // "-" (binary) → 0
                 let rem = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
                 let file = resolveNumstatPath(String(parts[2].trimmingCharacters(in: .whitespaces)))
-                let key = cwd + "/" + file
+                let key = repo + "/" + file
                 mA += add; mR += rem; if !file.isEmpty { mF.insert(key) }
                 if ts >= weekStart  { wA += add; wR += rem; if !file.isEmpty { wF.insert(key) } }
                 if ts >= todayStart { tA += add; tR += rem; if !file.isEmpty { tF.insert(key) } }

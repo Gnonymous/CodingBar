@@ -5,8 +5,10 @@ import Foundation
 public extension Snapshot {
     static func sample(now: Date = Date()) -> Snapshot {
         let cal = Calendar.current
-        let trend: [DayPoint] = [2.1, 3.4, 2.8, 5.2, 4.1, 6.3, 4.2].enumerated().map { i, c in
-            let d = cal.date(byAdding: .day, value: -(6 - i), to: now) ?? now
+        // Sample overview is the Today range, which buckets by hour (see Aggregator).
+        let hourly = [0.0, 0.0, 0.1, 0.4, 0.9, 0.6, 0.3, 0.8, 1.4, 0.7, 1.1, 0.5, 0.9]
+        let trend: [DayPoint] = hourly.enumerated().map { i, c in
+            let d = cal.date(byAdding: .hour, value: -(hourly.count - 1 - i), to: now) ?? now
             return DayPoint(date: d, cost: c, tokens: Int(c * 290_000))
         }
         let heat: [[Double]] = (0..<7).map { d in

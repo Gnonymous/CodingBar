@@ -15,10 +15,6 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/CodingBar"
 
-# SwiftPM resource bundle (pricing.json) must sit next to the executable for Bundle.module.
-BUNDLE="$ROOT/.build/release/CodingBar_CodingBar.bundle"
-[ -d "$BUNDLE" ] && cp -R "$BUNDLE" "$APP/Contents/MacOS/"
-
 cp "$ROOT/Scripts/Info.plist" "$APP/Contents/Info.plist"
 
 # App icon (DIRECTION 03 pulse squircle). Committed as Scripts/AppIcon.icns;
@@ -34,8 +30,12 @@ if [ -n "${CODINGBAR_VERSION:-}" ]; then
   echo "▸ stamped version $VER"
 fi
 
-# Ad-hoc sign so Gatekeeper lets it run locally.
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (codesign skipped)"
+# Ad-hoc sign so Gatekeeper lets it run locally (no Developer ID, so users still
+# right-click → Open or clear the quarantine flag on first launch). Fail LOUDLY:
+# a silently-unsigned .app was shipping before because a stray SwiftPM resource
+# bundle in Contents/MacOS tripped `codesign --deep`. `set -e` aborts on failure.
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP"
 
 echo "✓ Built $APP"
 echo "  Launch:  open \"$APP\"   (look for the pulse icon in your menu bar)"

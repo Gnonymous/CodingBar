@@ -155,7 +155,12 @@ struct PanelView: View {
             Circle().fill(dc.good).frame(width: 5, height: 5)
             Text(lang.t("Local · live", "本地实时")).font(.system(size: 10)).foregroundStyle(dc.fg3)
             Text("·").font(.system(size: 10)).foregroundStyle(dc.fg3.opacity(0.4))
-            Text(lang.t("Quota ", "额度联网 ") + Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt, lang: lang))
+            // nil fetchedAt = no quota was ever fetched (no creds / empty / first-fetch
+            // failure). Show an explicit offline state instead of `?? generatedAt`, which
+            // would read "Quota just now" and falsely imply a live online reading.
+            Text(snap.quotaFetchedAt == nil
+                 ? lang.t("Quota offline", "额度未连接")
+                 : lang.t("Quota ", "额度联网 ") + Panel.age(snap.quotaFetchedAt, now: snap.generatedAt, lang: lang))
                 .font(.system(size: 10)).foregroundStyle(dc.fg3)
             Spacer()
             Text(lang.t("\(Panel.clock(snap.generatedAt)) refreshed", "\(Panel.clock(snap.generatedAt)) 刷新")).font(.system(size: 10)).foregroundStyle(dc.fg3)

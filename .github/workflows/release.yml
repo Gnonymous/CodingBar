@@ -18,10 +18,26 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # Gate the tag build on the same checks CI runs — a green branch build does not
+      # protect a later tag build if package-specific breakage slips in.
+      - name: Build & test
+        run: |
+          swift build
+          swift test
+          swift run CodingBar --self-test
+
       - name: Build CodingBar.app
         env:
           CODINGBAR_VERSION: ${{ github.ref_name }}
         run: ./Scripts/package.sh
+
+      # package.sh already signs and runs `codesign --verify` (fatal). Re-assert it here
+      # and confirm the packaged binary actually launches before we publish artifacts.
+      # No `spctl --assess`: an ad-hoc signature (no Developer ID) is rejected by design.
+      - name: Verify packaged app
+        run: |
+          codesign --verify --deep --strict dist/CodingBar.app
+          dist/CodingBar.app/Contents/MacOS/CodingBar --self-test
 
       - name: Zip app bundle
         run: ditto -c -k --keepParent dist/CodingBar.app "dist/CodingBar-${{ github.ref_name }}.zip"

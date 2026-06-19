@@ -17,7 +17,6 @@ public enum Aggregator {
 
         let todayStart = cal.startOfDay(for: now)
         func isToday(_ date: Date) -> Bool { date >= todayStart && date <= now }
-        func dayStart(_ date: Date) -> Date { cal.startOfDay(for: date) }
 
         // drives the always-today menu bar + today's coach
         let todayRecords = allRecords.filter { isToday($0.timestamp) }
@@ -70,21 +69,38 @@ public enum Aggregator {
         let scanCwds = todayCwds + monthCwds.prefix(10).filter { !seenCwd.contains($0) }
         let gitRanges = GitCorrelator.buildRanges(cwds: scanCwds, now: now)
 
-        // trend is always last 7 calendar days, independent of the range pill
-        var trend: [DayPoint] = []
-        for dayOffset in (0..<7).reversed() {
-            guard let d = cal.date(byAdding: .day, value: -dayOffset, to: todayStart) else { continue }
-            let nextDay = cal.date(byAdding: .day, value: 1, to: d) ?? d
-            var dayCost: Double = 0
-            var dayTotalTokens = 0
-            for r in allRecords {
-                let ds = dayStart(r.timestamp)
-                if ds >= d && r.timestamp < nextDay {
-                    dayCost += Pricing.cost(model: r.model, tokens: r.tokens)
-                    dayTotalTokens += r.tokens.total
+        // The trend sparkline follows the range pill: Today buckets by hour (since
+        // 00:00), 7d/30d by calendar day. Each overview builds its own series so the
+        // curve — and the date caption under it — tracks the selection instead of
+        // being frozen at one fixed 7-day window.
+        func trendSeries(_ buckets: [(start: Date, end: Date)]) -> [DayPoint] {
+            buckets.map { b in
+                var bucketCost: Double = 0
+                var bucketTokens = 0
+                for r in allRecords where r.timestamp >= b.start && r.timestamp < b.end {
+                    bucketCost += Pricing.cost(model: r.model, tokens: r.tokens)
+                    bucketTokens += r.tokens.total
                 }
+                return DayPoint(date: b.start, cost: bucketCost, tokens: bucketTokens)
             }
-            trend.append(DayPoint(date: d, cost: dayCost, tokens: dayTotalTokens))
+        }
+        // `count` calendar days ending today, each window [dayStart, nextDay).
+        func dayBuckets(_ count: Int) -> [(start: Date, end: Date)] {
+            (0..<count).reversed().compactMap { off in
+                guard let d = cal.date(byAdding: .day, value: -off, to: todayStart) else { return nil }
+                return (start: d, end: cal.date(byAdding: .day, value: 1, to: d) ?? d)
+            }
+        }
+        // Hourly windows from 00:00 today through the hour containing `now`.
+        func hourBucketsToday() -> [(start: Date, end: Date)] {
+            var out: [(start: Date, end: Date)] = []
+            var h = todayStart
+            while h <= now {
+                guard let next = cal.date(byAdding: .hour, value: 1, to: h), next > h else { break }
+                out.append((start: h, end: next))
+                h = next
+            }
+            return out
         }
 
         // Cost composition (by model / by project) over an arbitrary record set, so
@@ -209,6 +225,12 @@ public enum Aggregator {
             let deltaTok: Double? = prevTok > 0 ? Double(s.tokens.total - prevTok) / Double(prevTok) * 100 : nil
             let rangeRecords = allRecords.filter { $0.timestamp >= start && $0.timestamp <= now }
             let bd = breakdown(from: rangeRecords)
+            let trend: [DayPoint]
+            switch range {
+            case .today: trend = trendSeries(hourBucketsToday())
+            case .week:  trend = trendSeries(dayBuckets(7))
+            case .month: trend = trendSeries(dayBuckets(30))
+            }
             return Overview(
                 range: range,
                 spend: PeriodTotals(cost: s.cost, tokens: s.tokens, sessions: s.cwds.count),

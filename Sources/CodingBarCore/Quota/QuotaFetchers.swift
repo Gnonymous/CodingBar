@@ -12,10 +12,16 @@ public struct QuotaFetchResult: Sendable {
     public var windows: [QuotaWindow]
     public var note: String?    // degradation message for the UI, nil on success
     public var authFailed: Bool // true for 401/403/expired — won't recover on its own
-    public init(windows: [QuotaWindow] = [], note: String? = nil, authFailed: Bool = false) {
+    // true when the endpoint answered 2xx but its body no longer parses into any known
+    // window (the response schema likely changed). Distinct from a transient transport
+    // failure: this note must be surfaced even while last-good windows are still shown,
+    // or a silently-broken API parse would hide behind a slowly-ageing freshness label.
+    public var schemaFailed: Bool
+    public init(windows: [QuotaWindow] = [], note: String? = nil, authFailed: Bool = false, schemaFailed: Bool = false) {
         self.windows = windows
         self.note = note
         self.authFailed = authFailed
+        self.schemaFailed = schemaFailed
     }
 }
 
@@ -93,9 +99,9 @@ public struct ClaudeQuotaFetcher: Sendable {
             // HTTP was 2xx but no known windows parsed. A non-empty body yielding
             // nothing usually means the (private) endpoint's response shape changed —
             // distinct from a genuine "no quota" state, so it must not look like "0 used".
-            return QuotaFetchResult(note: body.isEmpty
-                ? language.t("No Claude quota data yet", "Claude 暂无额度数据")
-                : language.t("Claude quota data malformed (API fields may have changed)", "Claude 额度数据异常（接口字段可能已变更）"))
+            return body.isEmpty
+                ? QuotaFetchResult(note: language.t("No Claude quota data yet", "Claude 暂无额度数据"))
+                : QuotaFetchResult(note: language.t("Claude quota data malformed (API fields may have changed)", "Claude 额度数据异常（接口字段可能已变更）"), schemaFailed: true)
         }
         return QuotaFetchResult(windows: windows)
     }
@@ -179,9 +185,9 @@ public struct CodexQuotaFetcher: Sendable {
         }
         let windows = Self.parse(body)
         if windows.isEmpty {
-            return QuotaFetchResult(note: body.isEmpty
-                ? language.t("No Codex quota data yet", "Codex 暂无额度数据")
-                : language.t("Codex quota data malformed (API fields may have changed)", "Codex 额度数据异常（接口字段可能已变更）"))
+            return body.isEmpty
+                ? QuotaFetchResult(note: language.t("No Codex quota data yet", "Codex 暂无额度数据"))
+                : QuotaFetchResult(note: language.t("Codex quota data malformed (API fields may have changed)", "Codex 额度数据异常（接口字段可能已变更）"), schemaFailed: true)
         }
         return QuotaFetchResult(windows: windows)
     }

@@ -66,9 +66,13 @@ public enum CodexScanner {
                 }
 
             case "turn_context":
-                if model == "unknown",
-                   let payload = obj["payload"] as? [String: Any],
-                   let m = payload["model"] as? String {
+                // Adopt the model on EVERY turn_context, not only the first. A Codex
+                // session can switch model mid-stream (`/model`), and each later
+                // token_count delta must be priced/attributed under the model in
+                // effect at that turn — freezing on the first one mis-prices every
+                // turn after a switch and skews model composition + fuel classification.
+                if let payload = obj["payload"] as? [String: Any],
+                   let m = payload["model"] as? String, !m.isEmpty {
                     model = m
                 }
 

@@ -88,6 +88,8 @@ public actor QuotaService {
     /// Resolve one provider's fetch against its last-good cache:
     /// - success (non-empty) → adopt and remember it
     /// - auth failure (401/403/expired) → drop the stale data and surface the note
+    /// - schema failure (2xx but unparseable) → keep last-good windows but STILL surface
+    ///   the note, so a silently-changed API doesn't hide behind a stale reading
     /// - transient failure → keep the last-good silently (only surface a note if we
     ///   have nothing cached yet)
     private func merge(_ result: QuotaFetchResult, into last: inout [QuotaWindow],
@@ -98,6 +100,11 @@ public actor QuotaService {
         } else if result.authFailed {
             last = []
             successAt = nil
+            if let n = result.note { notes.append(n) }
+        } else if result.schemaFailed {
+            // Keep showing the stale windows (don't blank the gauge), but do NOT swallow
+            // the note — the endpoint shape changed and the user should see why quota
+            // stopped advancing. successAt is left untouched so the age keeps climbing.
             if let n = result.note { notes.append(n) }
         } else if last.isEmpty, let n = result.note {
             notes.append(n)

@@ -1,6 +1,7 @@
 import Foundation
 
-// MARK: - Price table (hardcoded from pricing.json — CodingBarCore has no bundle resources)
+// MARK: - Price table (compiled-in; CodingBarCore ships no bundle resources, so this
+// Swift table is the single source of truth for USD/1M-token rates)
 
 public enum Pricing {
 
@@ -42,7 +43,7 @@ public enum Pricing {
     /// alias → canonical model key (exact, lowercase)
     private static let aliasMap: [String: String] = {
         var m: [String: String] = [:]
-        // Claude aliases (from pricing.json + variants seen in real logs)
+        // Claude aliases (canonical keys above + variants seen in real logs)
         for alias in ["opus-4.8", "claude-opus-4-8", "opus"] { m[alias] = "anthropic/claude-opus-4-8" }
         for alias in ["opus-4.7", "claude-opus-4-7"] { m[alias] = "anthropic/claude-opus-4-7" }
         for alias in ["opus-4.6", "claude-opus-4-6"] { m[alias] = "anthropic/claude-opus-4-6" }

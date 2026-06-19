@@ -71,7 +71,7 @@ struct OverviewTab: View {
                             Spacer()
                             gitCaption
                             Spacer()
-                            Text(lang.t("Today", "今日"))
+                            Text(endLabel)
                         }
                         .font(.system(size: 9)).foregroundStyle(dc.fg3)
                         // Match the sparkline's internal horizontal inset (pad = 3) so the
@@ -103,8 +103,15 @@ struct OverviewTab: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(up ? dc.deltaUpBg : dc.deltaDownBg))
     }
 
-    private var startLabel: String { ov.trend.first.map { md($0.date) } ?? "" }
+    // Today buckets by hour, so its caption reads "9:00 → 现在"; the wider ranges
+    // read "M/d → 今日". Both endpoints must match the bucketing in Aggregator.
+    private var startLabel: String {
+        guard let first = ov.trend.first?.date else { return "" }
+        return range == .today ? hm(first) : md(first)
+    }
+    private var endLabel: String { range == .today ? lang.t("now", "现在") : lang.t("Today", "今日") }
     private func md(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "M/d"; return f.string(from: d) }
+    private func hm(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "H:mm"; return f.string(from: d) }
 
     /// Git change summary under the sparkline: +added (green) −removed (red) · N commit.
     private var gitCaption: Text {
@@ -264,23 +271,19 @@ struct OverviewTab: View {
     }
 
     private func tipCard(_ tip: Insight) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            Text(lang.t("$", "省")).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                .frame(width: 18, height: 18).background(RoundedRectangle(cornerRadius: 5).fill(dc.accent))
-            VStack(alignment: .leading, spacing: 6) {
-                Text(tip.text).font(.system(size: 11)).foregroundStyle(dc.fg)
-                    .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
-                if let sav = tip.savingUSD {
-                    HStack(spacing: 7) {
-                        Text(lang.t("Save \(Panel.usd(sav)) today", "今日可省 \(Panel.usd(sav))"))
-                            .font(.system(size: 10.5, weight: .bold)).monospacedDigit().foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(dc.good))
-                        Button { onShowInsights() } label: {
-                            Text(lang.t("More tips →", "更多建议 →")).font(.system(size: 10, weight: .semibold)).foregroundStyle(dc.accent)
-                        }
-                        .buttonStyle(.plain).focusEffectDisabled()
+        VStack(alignment: .leading, spacing: 6) {
+            Text(tip.text).font(.system(size: 11)).foregroundStyle(dc.fg)
+                .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            if let sav = tip.savingUSD {
+                HStack(spacing: 7) {
+                    Text(lang.t("Save \(Panel.usd(sav)) today", "今日可省 \(Panel.usd(sav))"))
+                        .font(.system(size: 10.5, weight: .bold)).monospacedDigit().foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(dc.good))
+                    Button { onShowInsights() } label: {
+                        Text(lang.t("More tips →", "更多建议 →")).font(.system(size: 10, weight: .semibold)).foregroundStyle(dc.accent)
                     }
+                    .buttonStyle(.plain).focusEffectDisabled()
                 }
             }
         }
@@ -297,7 +300,11 @@ struct OverviewTab: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     DCLabel(lang.t("Quota", "额度")); Spacer()
-                    Text(lang.t("online · ", "联网 · ") + Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt, lang: lang))
+                    // nil fetchedAt = nothing fetched; show "offline", not a "just now"
+                    // that the `?? generatedAt` fallback would otherwise fake as online.
+                    Text(snap.quotaFetchedAt == nil
+                         ? lang.t("offline", "未连接")
+                         : lang.t("online · ", "联网 · ") + Panel.age(snap.quotaFetchedAt, now: snap.generatedAt, lang: lang))
                         .font(.system(size: 9.5)).foregroundStyle(dc.fg3)
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 5).fill(dc.hover))

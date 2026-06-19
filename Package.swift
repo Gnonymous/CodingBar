@@ -14,7 +14,6 @@ let package = Package(
         .executableTarget(
             name: "CodingBar",
             dependencies: ["CodingBarCore"],
-            resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
