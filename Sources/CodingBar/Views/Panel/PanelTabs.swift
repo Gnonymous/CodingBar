@@ -323,6 +323,12 @@ struct OverviewTab: View {
                     RoundedRectangle(cornerRadius: 2).fill(dc.provider(provider)).frame(width: 7, height: 7)
                     Text(provider == .claude ? "Claude" : "Codex")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(dc.fg)
+                    // This provider's true data age (ages during cache-hits / failures;
+                    // resets only on a real fetch), so a stale group reads honestly.
+                    if let fetched = snap.quotaFetchedByProvider[provider.rawValue] {
+                        Text(Panel.age(fetched, now: snap.generatedAt))
+                            .font(.system(size: 9)).foregroundStyle(dc.fg3)
+                    }
                     Rectangle().fill(dc.sep).frame(height: 1)
                     Text("已用").font(.system(size: 9)).foregroundStyle(dc.fg3)
                 }

@@ -50,6 +50,13 @@ enum RenderDebug {
     @MainActor
     private static func scenarioSnapshot(_ name: String) -> Snapshot {
         var s = Snapshot.sample()
+        // Per-provider freshness (recent successes by default). Keep the global badge
+        // equal to the oldest provider, matching the runtime `global = min(...)` rule.
+        s.quotaFetchedByProvider = [
+            Provider.claude.rawValue: s.generatedAt.addingTimeInterval(-38),
+            Provider.codex.rawValue: s.generatedAt.addingTimeInterval(-92),
+        ]
+        s.quotaFetchedAt = s.generatedAt.addingTimeInterval(-92)
         switch name {
         case "nosession":
             s.liveSessions = []; s.burnPerMin = 0
@@ -57,6 +64,9 @@ enum RenderDebug {
             s.quota = s.quota.filter { $0.provider == .codex }
             s.quotaNotes = ["Claude 用量接口错误 HTTP 429 · 需重新登录"]
             s.quotaForecast = s.quotaForecast.filter { $0.key == "codex" }
+            // Codex is on a stale last-good reading (kept through a failure streak).
+            s.quotaFetchedByProvider = [Provider.codex.rawValue: s.generatedAt.addingTimeInterval(-8 * 60)]
+            s.quotaFetchedAt = s.generatedAt.addingTimeInterval(-8 * 60)
         case "empty":
             s.liveSessions = []; s.burnPerMin = 0
             s.coach = [Insight(kind: .tip, text: "欢迎使用 CodingBar！继续编码，这里会逐渐显示你的花费、效率与省钱建议。")]

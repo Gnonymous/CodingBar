@@ -41,6 +41,7 @@ final class UsageStore: ObservableObject {
     private var quotaNotes: [String] = []
     private var quotaForecast: [String: String] = [:]
     private var quotaFetchedAt: Date?
+    private var quotaFetchedByProvider: [String: Date] = [:]
 
     /// Overlay the authoritative online-quota fields onto a freshly built snapshot.
     /// Always called on the main actor at publish time, so a local refresh that
@@ -51,6 +52,7 @@ final class UsageStore: ObservableObject {
         snap.quotaNotes = quotaNotes
         snap.quotaForecast = quotaForecast
         snap.quotaFetchedAt = quotaFetchedAt
+        snap.quotaFetchedByProvider = quotaFetchedByProvider
         snap.menu.quotaPercent = quotaWindows.menuWindow(preferring: menuQuotaSource)?.remaining
     }
 
@@ -116,7 +118,11 @@ final class UsageStore: ObservableObject {
             self.quotaWindows = result.windows
             self.quotaNotes = result.notes
             self.quotaForecast = forecast
-            self.quotaFetchedAt = result.windows.isEmpty ? nil : nowD
+            // Honest freshness: the data's real last-success time (from QuotaService),
+            // not this poll's clock — so a TTL cache-hit or transient failure no longer
+            // re-stamps stale windows as "just now".
+            self.quotaFetchedAt = result.fetchedAt
+            self.quotaFetchedByProvider = result.fetchedAtByProvider
             var snap = self.snapshot
             self.applyQuota(to: &snap)
             self.snapshot = snap

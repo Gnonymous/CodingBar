@@ -279,19 +279,25 @@ public struct Snapshot: Codable, Sendable {
     /// Per-provider quota-depletion forecast text, keyed by `Provider.rawValue`
     /// (e.g. "claude" → "Claude 周额度预计 周三 15:12 见底"). Empty when no history.
     public var quotaForecast: [String: String]
-    /// When the online quota was last fetched (drives the "联网 · X 秒前" freshness).
+    /// When the online quota was last *successfully* fetched (oldest across providers
+    /// that have data) — drives an honest "联网 · X 秒前" that ages during TTL cache-hits
+    /// and failure streaks instead of resetting to "刚刚" on every poll.
     public var quotaFetchedAt: Date?
+    /// Per-provider last-success time (provider.rawValue → date) for per-group labels.
+    public var quotaFetchedByProvider: [String: Date]
     public init(generatedAt: Date, menu: MenuSummary, overview: Overview, habits: Habits,
                 projects: [ProjectStat], models: [ModelStat], cache: CacheStat,
                 quota: [QuotaWindow], coach: [Insight], fuel: FuelGauge?,
                 quotaNotes: [String] = [], overviews: [Overview] = [],
                 liveSessions: [LiveSession] = [], burnPerMin: Double = 0,
-                quotaForecast: [String: String] = [:], quotaFetchedAt: Date? = nil) {
+                quotaForecast: [String: String] = [:], quotaFetchedAt: Date? = nil,
+                quotaFetchedByProvider: [String: Date] = [:]) {
         self.generatedAt = generatedAt; self.menu = menu; self.overview = overview; self.habits = habits
         self.projects = projects; self.models = models; self.cache = cache; self.quota = quota
         self.coach = coach; self.fuel = fuel; self.quotaNotes = quotaNotes
         self.overviews = overviews.isEmpty ? [overview] : overviews
         self.liveSessions = liveSessions; self.burnPerMin = burnPerMin
         self.quotaForecast = quotaForecast; self.quotaFetchedAt = quotaFetchedAt
+        self.quotaFetchedByProvider = quotaFetchedByProvider
     }
 }
