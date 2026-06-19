@@ -16,6 +16,13 @@ final class UsageStore: ObservableObject {
     private var quotaWindows: [QuotaWindow] = []
     private var quotaNotes: [String] = []
 
+    // A local re-aggregation already in flight. The 30s timer, the status-item click
+    // and opening the panel all call refresh(); without this guard they pile up into
+    // overlapping Aggregator.run() passes that fight over CPU/disk and the shared
+    // scan-cache.json. Coalescing is correct here — every trigger just wants "the
+    // latest data soon", and the next tick (or interaction) picks up anything skipped.
+    private var isRefreshing = false
+
     /// The primaryText for the current menuMetric — always today (menu bar is
     /// independent of the panel's range selector).
     var primaryText: String {
@@ -37,13 +44,19 @@ final class UsageStore: ObservableObject {
     }
 
     /// Re-aggregate local logs (fast, offline). Reuses the last-known quota.
+    /// Coalesced: a trigger that arrives while a pass is still running is dropped.
     func refresh() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
         let q = quotaWindows
         let notes = quotaNotes
         Task.detached(priority: .userInitiated) {
             var snap = Aggregator.run(quota: q)
             snap.quotaNotes = notes
-            await MainActor.run { [snap] in self.snapshot = snap }
+            await MainActor.run { [snap] in
+                self.snapshot = snap
+                self.isRefreshing = false
+            }
         }
     }
 
@@ -53,11 +66,16 @@ final class UsageStore: ObservableObject {
     func refreshQuota(force: Bool = false) {
         Task {
             let result = await QuotaService.shared.current(force: force)
+            let nowD = Date()
+            // Forecaster reads and rewrites quota-history.json; keep that disk I/O off
+            // the main actor so a slow/large/corrupt history file can't jank the UI.
+            let windows = result.windows
+            let forecast = await Task.detached(priority: .utility) { () -> [String: String] in
+                _ = Forecaster.recordAndForecast(quota: windows, now: nowD)
+                return Forecaster.forecastByProvider(quota: windows, now: nowD)
+            }.value
             self.quotaWindows = result.windows
             self.quotaNotes = result.notes
-            let nowD = Date()
-            _ = Forecaster.recordAndForecast(quota: result.windows, now: nowD)
-            let forecast = Forecaster.forecastByProvider(quota: result.windows, now: nowD)
             var snap = self.snapshot
             snap.quota = result.windows
             snap.quotaNotes = result.notes

@@ -157,3 +157,25 @@ final class Scanner {
         try? data.write(to: cacheURL)
     }
 }
+
+// MARK: - Memory-friendly jsonl reading
+
+extension Data {
+    /// Iterate the file's `\n`-delimited UTF-8 lines without ever materializing the
+    /// whole file as one giant `String` or a full array of per-line copies. A big or
+    /// fast-growing transcript would otherwise spike to several full-size transient
+    /// buffers (Data + String + components array) on every rescan; here peak extra
+    /// memory is ~one line. Empty lines are skipped, matching the parsers' own
+    /// trim-then-skip. Lines that aren't valid UTF-8 are skipped (as before).
+    func forEachLine(_ body: (String) -> Void) {
+        let newline: UInt8 = 0x0A
+        var start = startIndex
+        while start < endIndex {
+            let end = self[start...].firstIndex(of: newline) ?? endIndex
+            if end > start, let line = String(data: self[start..<end], encoding: .utf8) {
+                body(line)
+            }
+            start = end < endIndex ? index(after: end) : endIndex
+        }
+    }
+}

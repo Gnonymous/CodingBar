@@ -23,8 +23,9 @@ public enum CodexScanner {
 
     static func parseFile(_ fileURL: URL) -> [RawRecord] {
         guard fileURL.lastPathComponent.hasPrefix("rollout-") else { return [] }
-        guard let data = try? Data(contentsOf: fileURL),
-              let content = String(data: data, encoding: .utf8) else {
+        // Memory-map: the OS pages the file in/out so a large rollout doesn't pin its
+        // whole size in resident memory, and forEachLine decodes one line at a time.
+        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else {
             return []
         }
 
@@ -35,15 +36,15 @@ public enum CodexScanner {
         var model = "unknown"
         var records: [RawRecord] = []
 
-        for line in content.components(separatedBy: "\n") {
+        data.forEachLine { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty,
                   let lineData = trimmed.data(using: .utf8),
                   let obj = (try? JSONSerialization.jsonObject(with: lineData)) as? [String: Any] else {
-                continue
+                return
             }
 
-            guard let type = obj["type"] as? String else { continue }
+            guard let type = obj["type"] as? String else { return }
 
             switch type {
             case "session_meta":
@@ -64,12 +65,12 @@ public enum CodexScanner {
                 guard let payload = obj["payload"] as? [String: Any],
                       let payloadType = payload["type"] as? String,
                       payloadType == "token_count" else {
-                    continue
+                    return
                 }
 
                 guard let info = payload["info"] as? [String: Any],
                       let lastUsage = info["last_token_usage"] as? [String: Any] else {
-                    continue
+                    return
                 }
 
                 let inputTokens     = lastUsage["input_tokens"] as? Int ?? 0
@@ -77,7 +78,7 @@ public enum CodexScanner {
                 let outputTokens    = lastUsage["output_tokens"] as? Int ?? 0
                 let reasoningTokens = lastUsage["reasoning_output_tokens"] as? Int ?? 0
 
-                guard inputTokens + outputTokens > 0 else { continue }
+                guard inputTokens + outputTokens > 0 else { return }
 
                 var timestamp = Date()
                 if let tsStr = obj["timestamp"] as? String ?? payload["timestamp"] as? String {

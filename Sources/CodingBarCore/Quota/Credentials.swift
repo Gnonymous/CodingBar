@@ -66,34 +66,14 @@ public struct SecurityCommandReader: Sendable {
     }
 
     public static func defaultRunner(executable: URL, arguments: [String], timeout: TimeInterval) -> (status: Int32, stdout: Data)? {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        // Watchdog: terminate a hung tool past the timeout. Termination closes
-        // the pipe, which unblocks the read below.
-        let watchdog = DispatchWorkItem {
-            if process.isRunning { process.terminate() }
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
-
-        // `security`'s output is a few KB (well under the pipe buffer), so a
-        // sequential read is safe; the watchdog unblocks it if the tool hangs.
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-        return (process.terminationStatus, stdoutData)
+        // Use the shared event-driven runner with a hard SIGKILL timeout. The old
+        // implementation here did a blocking `readDataToEndOfFile()` + `waitUntilExit()`
+        // and a SIGTERM-only watchdog, so a `security` tool that wedged in
+        // uninterruptible I/O (or ignored SIGTERM) could block this thread forever and
+        // stall every subsequent quota refresh on the QuotaService actor. `Subprocess.run`
+        // never blocks a thread on the child and force-kills it past the timeout.
+        guard let result = Subprocess.run(executable, arguments, timeout: timeout) else { return nil }
+        return (result.status, result.stdout)
     }
 }
 

@@ -32,8 +32,9 @@ public enum ClaudeScanner {
     }
 
     static func parseFile(_ fileURL: URL) -> [RawRecord] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let content = String(data: data, encoding: .utf8) else {
+        // Memory-map: the OS pages the file in/out so a large transcript doesn't pin
+        // its whole size in resident memory, and forEachLine decodes one line at a time.
+        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else {
             return []
         }
 
@@ -42,19 +43,19 @@ public enum ClaudeScanner {
 
         var records: [RawRecord] = []
 
-        for line in content.components(separatedBy: "\n") {
+        data.forEachLine { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty,
                   let lineData = trimmed.data(using: .utf8),
                   let obj = (try? JSONSerialization.jsonObject(with: lineData)) as? [String: Any] else {
-                continue
+                return
             }
 
-            guard let type = obj["type"] as? String, type == "assistant" else { continue }
+            guard let type = obj["type"] as? String, type == "assistant" else { return }
 
             guard let message = obj["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else {
-                continue
+                return
             }
 
             let inputTokens = usage["input_tokens"] as? Int ?? 0
@@ -62,7 +63,7 @@ public enum ClaudeScanner {
             let cacheRead   = usage["cache_read_input_tokens"] as? Int ?? 0
             let outputTokens = usage["output_tokens"] as? Int ?? 0
 
-            guard inputTokens + outputTokens + cacheRead + cacheWrite > 0 else { continue }
+            guard inputTokens + outputTokens + cacheRead + cacheWrite > 0 else { return }
 
             let model = message["model"] as? String ?? "unknown"
             let messageId = message["id"] as? String

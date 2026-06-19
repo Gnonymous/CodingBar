@@ -18,6 +18,12 @@ public enum Forecaster {
         return support.appendingPathComponent("quota-history.json")
     }
 
+    // `recordAndForecast` (called from Aggregator.run, on the local-refresh detached
+    // task) and `forecastByProvider` (called from refreshQuota's detached task) both
+    // touch quota-history.json and can run concurrently. Serialize the read-modify-write
+    // so the two passes can't interleave into a corrupt/truncated history file.
+    private static let historyLock = NSLock()
+
     private static func loadHistory() -> [QuotaSample] {
         guard let data = try? Data(contentsOf: historyURL),
               let decoded = try? JSONDecoder().decode([QuotaSample].self, from: data) else {
@@ -34,6 +40,7 @@ public enum Forecaster {
     }
 
     public static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
+        historyLock.lock()
         var history = loadHistory()
 
         // Append today's samples (deduplicate by rounding to the nearest hour)
@@ -59,6 +66,7 @@ public enum Forecaster {
         let cutoff = now.timeIntervalSince1970 - 14 * 86400
         history = history.filter { $0.date >= cutoff }
         saveHistory(history)
+        historyLock.unlock()
 
         // Forecast for Codex weekly window ("7d")
         let weekSamples = history
@@ -75,7 +83,9 @@ public enum Forecaster {
     /// Returns `[Provider.rawValue: "<Name> 周额度预计 <weekday> <time> 见底"]`.
     /// Reads the history persisted by `recordAndForecast`, so call that first.
     public static func forecastByProvider(quota: [QuotaWindow], now: Date) -> [String: String] {
+        historyLock.lock()
         let history = loadHistory()
+        historyLock.unlock()
         var out: [String: String] = [:]
         for provider in [Provider.claude, Provider.codex] {
             guard quota.contains(where: { $0.provider == provider && $0.label == "7d" }) else { continue }

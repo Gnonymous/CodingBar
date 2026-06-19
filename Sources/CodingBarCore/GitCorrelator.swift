@@ -4,34 +4,18 @@ enum GitCorrelator {
 
     /// Run a git command with a hard timeout. Returns stdout or nil on failure/timeout.
     private static func run(args: [String], timeout: TimeInterval = 5.0) -> String? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        proc.arguments = args
+        runProcess(URL(fileURLWithPath: "/usr/bin/git"), args, timeout: timeout)
+    }
 
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()  // discard stderr
-
-        do { try proc.run() } catch { return nil }
-
-        // Wait with timeout using a background thread
-        let deadline = DispatchTime.now() + timeout
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .utility).async {
-            proc.waitUntilExit()
-            group.leave()
-        }
-
-        if group.wait(timeout: deadline) == .timedOut {
-            proc.terminate()
-            return nil
-        }
-
-        guard proc.terminationStatus == 0 else { return nil }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+    /// Run `executable` with `args`; returns stdout, or nil on spawn failure, non-zero
+    /// exit, or timeout. Thin wrapper over `Subprocess.run` (the event-driven,
+    /// thread-leak-free runner born from the overnight "popover frozen" bug — see
+    /// `Subprocess.swift`). Kept as a named entry point so the timeout/reaping
+    /// behaviour can be regression-tested directly.
+    static func runProcess(_ executable: URL, _ args: [String], timeout: TimeInterval) -> String? {
+        guard let result = Subprocess.run(executable, args, timeout: timeout),
+              result.status == 0 else { return nil }
+        return String(data: result.stdout, encoding: .utf8)
     }
 
     private static func isGitRepo(at path: String) -> Bool {
