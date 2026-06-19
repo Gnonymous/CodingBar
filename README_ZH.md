@@ -12,6 +12,10 @@
 </div>
 
 <p align="center">
+  <img src="docs/assets/social.png" width="840" alt="CodingBar — 你的 Claude Code 与 Codex 用量仪表盘，就在菜单栏" />
+</p>
+
+<p align="center">
   <img src="docs/assets/menubar.png" width="760" alt="CodingBar 菜单栏 — 额度状态" />
 </p>
 
@@ -37,15 +41,28 @@
 
 Tokei / CodexBar 给你看的是**账单**。CodingBar 给你看的是**仪表盘**：你和 AI 干成了什么、值不值、下次怎么花得更聪明。token 和成本是底座，洞察才是重点。
 
-所有数据从本地 **Claude Code** 与 **Codex** 日志读取——增量扫描、零外部依赖、不需要 Xcode。**只有额度查询联网**，用的是你自己的 token，只读请求。
+所有数据从本地 **Claude Code** 与 **Codex** 日志读取——增量扫描、零外部依赖、不需要 Xcode。**唯一自动联网的是额度查询**——用你自己的 token 发只读请求（外加一个可选、需手动触发的更新检查）。
 
 ## 特性
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/feature-outcome.png" alt="成果优先于花费 — 花的钱读成干成的活" /></td>
+    <td width="50%"><img src="docs/assets/feature-coach.png" alt="实时教练 — 上下文燃料、额度燃尽、省钱提示" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/feature-behavior.png" alt="行为镜子 — 工具占比、节奏、黄金时段热力" /></td>
+    <td width="50%"><img src="docs/assets/feature-privacy.png" alt="本地优先、隐私至上 — 日志永不离开你的机器" /></td>
+  </tr>
+</table>
+
+<p align="center"><sub><em>功能卡为示意 — 数字均为样本数据。</em></sub></p>
 
 - **成果优先于花费**：git 产出（+/− 行 · commit · 文件）与今日花费并置，附 `$/行`、`$/commit`。花的钱终于能读成*干成的活*。
 - **实时教练**：当前会话的上下文燃料表（含 1M-context 识别）、额度燃尽预测，以及省钱提示——如*「8 个简单任务用了 Opus，换 Haiku 可省 $0.9」*。
 - **行为镜子**：工具使用占比（写 / 读 / 跑 / 搜）、协作节奏、黄金时段热力图——全来自日志里的 `tool_use` 事件。
 - **活着的菜单栏**：单色脉冲随实时吞吐跳动，两行严格等宽数字——今日 token / 花费与剩余额度，随时可见。
-- **本地优先、隐私至上**：用量、成本、行为、git 全部 100% 离线。额度是唯一联网调用——只读查*你自己*的用量，不上传内容，不弹密码框。
+- **本地优先、隐私至上**：用量、成本、行为、git 全部 100% 离线。唯一自动联网调用是额度——只读查*你自己*的用量，不上传内容，不弹密码框（唯一例外是可选、需手动点击的更新检查）。
 - **原生、零依赖**：纯 SwiftPM，无 Xcode 工程，无第三方包。直接增量读取 `~/.claude/projects` 与 `~/.codex/sessions`。
 
 ## 安装
@@ -81,19 +98,20 @@ make package    # 产出 dist/CodingBar.app
 - **构成**（Composition）— 钱花在哪：按模型和按项目拆解花费。
 - **洞察**（Insights）— 代码产出、工具使用占比、黄金时段热力图、省钱提示、额度燃尽预测。
 
-> **数字是怎么算的。** *花费*是按 **API 现付价估算**（`pricing.json`），**不是你的订阅账单**——包月 Max / ChatGPT 用户应把它读作「等价 API 价值」，而非实际扣款。*代码产出*是**近似的 git 归因**：会话工作目录在时间窗内的全部非 merge 提交——无法区分手写与 AI 提交，且不含未提交改动。*Codex* 的 token 总量按每个会话的累计计数器（`total_token_usage`）做差分去重，不再把重复事件算两遍。
+> **数字是怎么算的。** *花费*是按 **API 现付价估算**（`Pricing.swift`），**不是你的订阅账单**——包月 Max / ChatGPT 用户应把它读作「等价 API 价值」，而非实际扣款。*代码产出*是**近似的 git 归因**：会话工作目录在时间窗内的全部非 merge 提交——无法区分手写与 AI 提交，且不含未提交改动。*Codex* 的 token 总量按每个会话的累计计数器（`total_token_usage`）做差分去重，不再把重复事件算两遍。
 
 ## 隐私
 
-- **用量 / 成本 / 行为 / git** — 100% 本地、离线。只读取 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`。价格表（`Sources/CodingBar/Resources/pricing.json`）用户可改。
-- **额度** — 唯一联网的部分。带你自己的 OAuth token 向各家用量接口发**只读 GET**（Claude `api.anthropic.com/api/oauth/usage`、Codex `chatgpt.com/backend-api/wham/usage`）。不上传任何本地内容、不查消费明细。5 分钟 TTL 缓存。
+- **用量 / 成本 / 行为 / git** — 100% 本地、离线。只读取 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`。价格为编译期内置默认值（见 `Sources/CodingBarCore/Pricing.swift`）。
+- **额度** — 唯一*自动*联网的部分。带你自己的 OAuth token 向各家用量接口发**只读 GET**（Claude `api.anthropic.com/api/oauth/usage`、Codex `chatgpt.com/backend-api/wham/usage`）。不上传任何本地内容、不查消费明细。5 分钟 TTL 缓存。
+- **更新检查** — 唯一的*另一条*联网：**用户主动触发**的对公开 GitHub Releases API 的只读 GET，仅在你于设置中点「检查更新」时发起。无鉴权、无遥测、不上传任何内容。
 - **不弹密码框** — Claude 的 OAuth token 存在 Keychain。自签名进程直接读会被 macOS 反复弹窗，CodingBar 改为调用 Apple 签名的 `/usr/bin/security`（在该条目可信 ACL 内）静默读取，读不到就降级为*「额度不可用」*。**始终无弹窗。** Codex 走 `~/.codex/auth.json`。
 
 ## 架构
 
 纯 SwiftPM，两个 target，数据层与 UI 完全解耦：
 
-- **`CodingBarCore`** — 无 UI、可测的数据层：`Scanner`（增量缓存）、`ClaudeScanner` / `CodexScanner`、`Pricing`、`Aggregator`，四支柱（`Behavior` / `Fuel` / `Forecast` / `Coach` / `GitCorrelator`），以及 `Quota/`（`Credentials`、Claude/Codex fetcher、5min TTL 缓存的 `QuotaService`）。产出一个不可变 `Snapshot`。
+- **`CodingBarCore`** — 无 UI、可测的数据层：`Scanner`（增量缓存）、`ClaudeScanner` / `CodexScanner`、`Pricing`、`Aggregator`，四支柱（`Behavior` / `Fuel` / `Forecast` / `Coach`）加 `GitCorrelator`，以及 `Quota/`（`Credentials`、Claude/Codex fetcher、5min TTL 缓存的 `QuotaService`）。产出一个不可变 `Snapshot`。
 - **`CodingBar`** — AppKit `NSStatusItem` + SwiftUI 应用：`UsageStore`（`@MainActor ObservableObject`）、`RefreshLoop`、`StatusItemController`、`MenuBarItemView`，以及三 Tab 面板。
 
 因为分层解耦，`swift run CodingBar --dump-json` 可不开 GUI 用真实日志验证数据，`--render-menubar` / `--render-panel` 能把 UI 离屏渲染成 PNG。完整地图见 [`CLAUDE.md`](CLAUDE.md)。
