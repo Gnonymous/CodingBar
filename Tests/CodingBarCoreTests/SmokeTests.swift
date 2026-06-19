@@ -113,6 +113,51 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(records.first?.model, "gpt-5.5-codex")
     }
 
+    /// Codex `function_call` items (exec_command, view_image, …) buffered before a
+    /// turn's token_count must attach to that turn's record so the tool-mix counts Codex.
+    func testCodexScannerAttachesFunctionCallToolNames() throws {
+        func line(_ o: [String: Any]) -> String { String(data: try! JSONSerialization.data(withJSONObject: o), encoding: .utf8)! }
+        func fn(_ name: String) -> [String: Any] { ["type": "response_item", "payload": ["type": "function_call", "name": name]] }
+        func tc(ts: String, input: Int, output: Int) -> [String: Any] {
+            ["type": "event_msg", "timestamp": ts,
+             "payload": ["type": "token_count", "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": 0,
+                                                        "output_tokens": output, "reasoning_output_tokens": 0]]]]
+        }
+        let lines = [
+            line(["type": "session_meta", "payload": ["cwd": "/tmp/p"]]),
+            line(["type": "turn_context", "payload": ["model": "gpt-5.5-codex"]]),
+            line(fn("exec_command")), line(fn("view_image")),
+            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, output: 10)),
+            line(fn("exec_command")),
+            line(tc(ts: "2026-06-18T13:05:00.000Z", input: 200, output: 20)),
+        ]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let recs = CodexScanner.parseFile(url)
+        XCTAssertEqual(recs.count, 2)
+        XCTAssertEqual(recs[0].toolNames, ["exec_command", "view_image"])
+        XCTAssertEqual(recs[1].toolNames, ["exec_command"])  // buffer cleared after each emitted record
+        XCTAssertEqual(Behavior.bucket(toolName: "exec_command"), \ToolMix.run)
+        XCTAssertEqual(Behavior.bucket(toolName: "view_image"), \ToolMix.read)
+    }
+
+    func testGitRenamePathResolution() {
+        XCTAssertEqual(GitCorrelator.resolveNumstatPath("src/{old.swift => new.swift}"), "src/new.swift")
+        XCTAssertEqual(GitCorrelator.resolveNumstatPath("dir/{old => new}/f.swift"), "dir/new/f.swift")
+        XCTAssertEqual(GitCorrelator.resolveNumstatPath("old.txt => new.txt"), "new.txt")
+        XCTAssertEqual(GitCorrelator.resolveNumstatPath("normal/path.swift"), "normal/path.swift")
+        // A literal "=>" without git's spaced arrow must pass through untouched.
+        XCTAssertEqual(GitCorrelator.resolveNumstatPath("weird=>name.txt"), "weird=>name.txt")
+    }
+
+    func testPriceIsExactFlagsOnlyFallbackModels() {
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-4-8"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "gpt-5.5-codex"))
+        XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.1"))                 // no table/family match
+        XCTAssertFalse(Pricing.priceIsExact(model: "totally-unknown-model"))  // generic fallback rate
+    }
+
     func testTokenBreakdownMath() {
         var a = TokenBreakdown(input: 10, output: 5, cacheRead: 100)
         a += TokenBreakdown(input: 5, cacheWrite: 20)

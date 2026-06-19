@@ -18,6 +18,25 @@ enum GitCorrelator {
         return String(data: result.stdout, encoding: .utf8)
     }
 
+    /// Collapse git's `--numstat -M` rename syntax to the file's *new* path so a moved
+    /// file keys to one entry, not two:
+    ///   "dir/{old => new}/f.swift" → "dir/new/f.swift"
+    ///   "old.swift => new.swift"   → "new.swift"
+    /// (Non-rename paths pass through unchanged.)
+    static func resolveNumstatPath(_ raw: String) -> String {
+        // git's rename syntax always spaces the arrow (" => "); gate on that so a real
+        // (non-rename) file whose literal name contains "=>" isn't truncated.
+        guard raw.contains(" => ") else { return raw }
+        if let l = raw.firstIndex(of: "{"), let r = raw.firstIndex(of: "}"), l < r {
+            let prefix = raw[raw.startIndex..<l]
+            let suffix = raw[raw.index(after: r)...]
+            let newPart = raw[raw.index(after: l)..<r]
+                .components(separatedBy: "=>").last?.trimmingCharacters(in: .whitespaces) ?? ""
+            return (String(prefix) + newPart + String(suffix)).replacingOccurrences(of: "//", with: "/")
+        }
+        return raw.components(separatedBy: "=>").last?.trimmingCharacters(in: .whitespaces) ?? raw
+    }
+
     private static func isGitRepo(at path: String) -> Bool {
         let result = run(args: ["-C", path, "rev-parse", "--is-inside-work-tree"], timeout: 3.0)
         return result?.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
@@ -57,7 +76,9 @@ enum GitCorrelator {
             // `--no-merges` drops merge commits so a merge's whole combined diff isn't
             // counted as fresh output (it still over-counts non-AI/hand-written commits
             // in the cwd — the panel labels this as approximate git attribution).
-            let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)", "--no-merges",
+            // `-M` detects renames so a moved file is one row (resolved to its new path
+            // below) instead of a delete+add that double-counts it in the file set.
+            let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)", "--no-merges", "-M",
                                  "--numstat", "--pretty=format:@%ct"], timeout: 6.0) ?? ""
             var ts: Double = 0
             for line in out.components(separatedBy: "\n") {
@@ -72,7 +93,7 @@ enum GitCorrelator {
                 guard parts.count == 3 else { continue }
                 let add = Int(parts[0].trimmingCharacters(in: .whitespaces)) ?? 0  // "-" (binary) → 0
                 let rem = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
-                let file = String(parts[2].trimmingCharacters(in: .whitespaces))
+                let file = resolveNumstatPath(String(parts[2].trimmingCharacters(in: .whitespaces)))
                 let key = cwd + "/" + file
                 mA += add; mR += rem; if !file.isEmpty { mF.insert(key) }
                 if ts >= weekStart  { wA += add; wR += rem; if !file.isEmpty { wF.insert(key) } }

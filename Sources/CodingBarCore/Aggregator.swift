@@ -86,54 +86,50 @@ public enum Aggregator {
             trend.append(DayPoint(date: d, cost: dayCost, tokens: dayTotalTokens))
         }
 
-        var modelMap: [String: (tokens: TokenBreakdown, cost: Double)] = [:]
-        for r in allRecords {
-            let key = Pricing.normalize(model: r.model)
-            var entry = modelMap[key] ?? (tokens: TokenBreakdown(), cost: 0)
-            entry.tokens += r.tokens
-            entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
-            modelMap[key] = entry
-        }
-
-        let models: [ModelStat] = modelMap
-            .map { key, entry in
-                ModelStat(
-                    model: key,
-                    provider: Pricing.provider(forCanonicalKey: key),
-                    tokens: entry.tokens,
-                    cost: entry.cost
-                )
-            }
-            .sorted { $0.cost > $1.cost }
-
-        var projectMap: [String: (tokens: TokenBreakdown, cost: Double, lastActive: Date)] = [:]
-        for r in allRecords {
-            guard !r.cwd.isEmpty else { continue }
-            var entry = projectMap[r.cwd] ?? (tokens: TokenBreakdown(), cost: 0, lastActive: Date.distantPast)
-            entry.tokens += r.tokens
-            entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
-            if r.timestamp > entry.lastActive { entry.lastActive = r.timestamp }
-            projectMap[r.cwd] = entry
-        }
-
+        // Cost composition (by model / by project) over an arbitrary record set, so
+        // the same logic serves the all-time top-level lists AND each range's overview
+        // (the 构成 tab now follows the range selector). `pricedExact` is false when any
+        // contributing record priced via a family guess / fallback rate.
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let projects: [ProjectStat] = projectMap
-            .map { cwd, entry -> ProjectStat in
-                let displayPath = cwd.hasPrefix(home)
-                    ? "~" + cwd.dropFirst(home.count)
-                    : cwd
-                let name = URL(fileURLWithPath: cwd).lastPathComponent
-                return ProjectStat(
-                    name: name,
-                    path: displayPath,
-                    tokens: entry.tokens,
-                    cost: entry.cost,
-                    lastActive: entry.lastActive
-                )
+        func breakdown(from records: [RawRecord]) -> (models: [ModelStat], projects: [ProjectStat]) {
+            var modelMap: [String: (tokens: TokenBreakdown, cost: Double, exact: Bool)] = [:]
+            for r in records {
+                let key = Pricing.normalize(model: r.model)
+                var entry = modelMap[key] ?? (tokens: TokenBreakdown(), cost: 0, exact: true)
+                entry.tokens += r.tokens
+                entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
+                entry.exact = entry.exact && Pricing.priceIsExact(model: r.model)
+                modelMap[key] = entry
             }
-            .sorted { $0.cost > $1.cost }
-            .prefix(8)
-            .map { $0 }
+            let models: [ModelStat] = modelMap
+                .map { key, entry in
+                    ModelStat(model: key, provider: Pricing.provider(forCanonicalKey: key),
+                              tokens: entry.tokens, cost: entry.cost, pricedExact: entry.exact)
+                }
+                .sorted { $0.cost > $1.cost }
+
+            var projectMap: [String: (tokens: TokenBreakdown, cost: Double, lastActive: Date)] = [:]
+            for r in records {
+                guard !r.cwd.isEmpty else { continue }
+                var entry = projectMap[r.cwd] ?? (tokens: TokenBreakdown(), cost: 0, lastActive: Date.distantPast)
+                entry.tokens += r.tokens
+                entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
+                if r.timestamp > entry.lastActive { entry.lastActive = r.timestamp }
+                projectMap[r.cwd] = entry
+            }
+            let projects: [ProjectStat] = projectMap
+                .map { cwd, entry -> ProjectStat in
+                    let displayPath = cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
+                    return ProjectStat(name: URL(fileURLWithPath: cwd).lastPathComponent, path: displayPath,
+                                       tokens: entry.tokens, cost: entry.cost, lastActive: entry.lastActive)
+                }
+                .sorted { $0.cost > $1.cost }
+                .prefix(8)
+                .map { $0 }
+            return (models, projects)
+        }
+
+        let (models, projects) = breakdown(from: allRecords)
 
         // cache stats are Claude only
         var totalCacheRead = 0
@@ -210,13 +206,17 @@ public enum Aggregator {
             let delta: Double? = prev > 0 ? (s.cost - prev) / prev * 100 : nil
             let prevTok = tokensTotal(from: prevStart, to: start)
             let deltaTok: Double? = prevTok > 0 ? Double(s.tokens.total - prevTok) / Double(prevTok) * 100 : nil
+            let rangeRecords = allRecords.filter { $0.timestamp >= start && $0.timestamp <= now }
+            let bd = breakdown(from: rangeRecords)
             return Overview(
                 range: range,
                 spend: PeriodTotals(cost: s.cost, tokens: s.tokens, sessions: s.cwds.count),
                 output: output,
                 deltaVsPrevPct: delta,
                 deltaTokensPct: deltaTok,
-                trend: trend
+                trend: trend,
+                models: bd.models,
+                projects: bd.projects
             )
         }
         let overviewToday = makeOverview(.today, start: todayStart, output: gitRanges.today)

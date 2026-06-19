@@ -103,6 +103,14 @@ public enum Pricing {
         return lower
     }
 
+    /// False when the model isn't in the price table even after normalization, so it
+    /// prices at the generic fallback rate ($3/$15) — i.e. a genuinely unknown model
+    /// whose cost is a guess. Family-keyword matches that land on a real table entry
+    /// (a dated variant of a known model) still count as priced, to avoid noise.
+    public static func priceIsExact(model: String) -> Bool {
+        priceTable[normalize(model: model)] != nil
+    }
+
     // MARK: - Display names
 
     /// Short, prefix-free names for the UI (the provider is shown via the colored dot).

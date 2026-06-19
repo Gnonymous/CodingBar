@@ -38,8 +38,11 @@ public struct ModelStat: Codable, Sendable, Identifiable {
     public var provider: Provider
     public var tokens: TokenBreakdown
     public var cost: Double
-    public init(model: String, provider: Provider, tokens: TokenBreakdown, cost: Double) {
-        self.model = model; self.provider = provider; self.tokens = tokens; self.cost = cost
+    /// false when the price came from a family-keyword guess or the generic fallback
+    /// rate rather than a real table entry — the UI flags such rows as approximate.
+    public var pricedExact: Bool
+    public init(model: String, provider: Provider, tokens: TokenBreakdown, cost: Double, pricedExact: Bool = true) {
+        self.model = model; self.provider = provider; self.tokens = tokens; self.cost = cost; self.pricedExact = pricedExact
     }
 }
 
@@ -204,10 +207,16 @@ public struct Overview: Codable, Sendable {
     public var deltaVsPrevPct: Double?
     public var deltaTokensPct: Double?
     public var trend: [DayPoint]
+    /// Per-range cost composition so the 构成 (Cost) tab follows the range selector
+    /// instead of always showing all-time totals.
+    public var models: [ModelStat]
+    public var projects: [ProjectStat]
     public init(range: Range, spend: PeriodTotals, output: OutputStat,
-                deltaVsPrevPct: Double?, deltaTokensPct: Double? = nil, trend: [DayPoint]) {
+                deltaVsPrevPct: Double?, deltaTokensPct: Double? = nil, trend: [DayPoint],
+                models: [ModelStat] = [], projects: [ProjectStat] = []) {
         self.range = range; self.spend = spend; self.output = output
         self.deltaVsPrevPct = deltaVsPrevPct; self.deltaTokensPct = deltaTokensPct; self.trend = trend
+        self.models = models; self.projects = projects
     }
 
     /// Period-over-period change for the given display metric (nil = hide pill).

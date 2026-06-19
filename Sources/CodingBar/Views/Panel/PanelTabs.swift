@@ -386,22 +386,36 @@ struct OverviewTab: View {
 
 struct CostTab: View {
     @Environment(\.dc) private var dc
-    let snap: Snapshot
-    var metric: MenuMetric = .cost
+    @ObservedObject var store: UsageStore
     @State private var modelsExpanded = false
     @State private var projectsExpanded = false
     private let modelCap = 4
     private let projectCap = 5
-    private var maxModelCost: Double { max(snap.models.map { $0.cost }.max() ?? 1, 1e-9) }
-    private var maxProjCost: Double { max(snap.projects.map { $0.cost }.max() ?? 1, 1e-9) }
-    private var maxModelTokens: Double { max(Double(snap.models.map { $0.tokens.total }.max() ?? 1), 1) }
-    private var maxProjTokens: Double { max(Double(snap.projects.map { $0.tokens.total }.max() ?? 1), 1) }
+
+    private var snap: Snapshot { store.snapshot }
+    private var metric: MenuMetric { store.menuMetric }
+    private var range: Range { store.selectedRange }
+    private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
+    private var rangeLabel: String { switch range { case .today: "今日"; case .week: "近 7 天"; case .month: "近 30 天" } }
+    // Only fall back to the all-time lists for placeholder snapshots that carry NO
+    // per-range composition at all (sample / --render-panel). A real snapshot whose
+    // *selected* range is genuinely empty (no activity yet today) must render empty to
+    // match the $0 overview hero — not silently show lifetime totals under a 今日 pill.
+    // Gate on all overviews, not just `ov`, or an empty selected range re-triggers the bug.
+    private var hasRangeComposition: Bool { snap.overviews.contains { !$0.models.isEmpty || !$0.projects.isEmpty } }
+    private var rangeModels: [ModelStat] { hasRangeComposition ? ov.models : snap.models }
+    private var rangeProjects: [ProjectStat] { hasRangeComposition ? ov.projects : snap.projects }
+
+    private var maxModelCost: Double { max(rangeModels.map { $0.cost }.max() ?? 1, 1e-9) }
+    private var maxProjCost: Double { max(rangeProjects.map { $0.cost }.max() ?? 1, 1e-9) }
+    private var maxModelTokens: Double { max(Double(rangeModels.map { $0.tokens.total }.max() ?? 1), 1) }
+    private var maxProjTokens: Double { max(Double(rangeProjects.map { $0.tokens.total }.max() ?? 1), 1) }
     // Rank by the active metric so the biggest consumer is always on top.
     private var sortedModels: [ModelStat] {
-        metric == .cost ? snap.models : snap.models.sorted { $0.tokens.total > $1.tokens.total }
+        metric == .cost ? rangeModels : rangeModels.sorted { $0.tokens.total > $1.tokens.total }
     }
     private var sortedProjects: [ProjectStat] {
-        metric == .cost ? snap.projects : snap.projects.sorted { $0.tokens.total > $1.tokens.total }
+        metric == .cost ? rangeProjects : rangeProjects.sorted { $0.tokens.total > $1.tokens.total }
     }
     private var shownModels: [ModelStat] { modelsExpanded ? sortedModels : Array(sortedModels.prefix(modelCap)) }
     private var shownProjects: [ProjectStat] { projectsExpanded ? sortedProjects : Array(sortedProjects.prefix(projectCap)) }
@@ -410,29 +424,48 @@ struct CostTab: View {
         VStack(spacing: 0) {
             DCSection {
                 VStack(alignment: .leading, spacing: 0) {
-                    DCLabel(metric == .cost ? "按模型 · 累计花费" : "按模型 · 累计 Token").padding(.bottom, 11)
-                    VStack(alignment: .leading, spacing: 11) {
-                        ForEach(shownModels) { modelRow($0) }
+                    HStack {
+                        DCLabel(metric == .cost ? "按模型 · 花费" : "按模型 · Token")
+                        Spacer()
+                        DCRangeSeg(selected: range, onSelect: store.setRange)
                     }
-                    if snap.models.count > modelCap {
-                        expandToggle(modelsExpanded, snap.models.count - modelCap) { modelsExpanded.toggle() }
-                            .padding(.top, 10)
+                    .padding(.bottom, 11)
+                    if sortedModels.isEmpty {
+                        emptyHint
+                    } else {
+                        VStack(alignment: .leading, spacing: 11) {
+                            ForEach(shownModels) { modelRow($0) }
+                        }
+                        if sortedModels.count > modelCap {
+                            expandToggle(modelsExpanded, sortedModels.count - modelCap) { modelsExpanded.toggle() }
+                                .padding(.top, 10)
+                        }
                     }
                 }
             }
-            DCSection {
-                VStack(alignment: .leading, spacing: 0) {
-                    DCLabel(metric == .cost ? "按项目 · 累计花费" : "按项目 · 累计 Token").padding(.bottom, 11)
-                    VStack(alignment: .leading, spacing: 9) {
-                        ForEach(shownProjects) { projRow($0) }
-                    }
-                    if snap.projects.count > projectCap {
-                        expandToggle(projectsExpanded, snap.projects.count - projectCap) { projectsExpanded.toggle() }
-                            .padding(.top, 9)
+            if !sortedProjects.isEmpty {
+                DCSection {
+                    VStack(alignment: .leading, spacing: 0) {
+                        DCLabel(metric == .cost ? "按项目 · 花费" : "按项目 · Token").padding(.bottom, 11)
+                        VStack(alignment: .leading, spacing: 9) {
+                            ForEach(shownProjects) { projRow($0) }
+                        }
+                        if sortedProjects.count > projectCap {
+                            expandToggle(projectsExpanded, sortedProjects.count - projectCap) { projectsExpanded.toggle() }
+                                .padding(.top, 9)
+                        }
                     }
                 }
             }
         }
+    }
+
+    private var emptyHint: some View {
+        Text("\(rangeLabel)暂无消费记录")
+            .font(.system(size: 11)).foregroundStyle(dc.fg3)
+            .frame(maxWidth: .infinity).padding(12)
+            .background(RoundedRectangle(cornerRadius: 9).fill(dc.elev))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(dc.sep2, lineWidth: 0.5))
     }
 
     private func expandToggle(_ expanded: Bool, _ hidden: Int, _ action: @escaping () -> Void) -> some View {
@@ -456,6 +489,14 @@ struct CostTab: View {
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 2).fill(dc.provider(m.provider)).frame(width: 6, height: 6)
                 Text(name).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg)
+                // Off-table models priced by a family guess / fallback rate are flagged
+                // so the cost isn't read as exact.
+                if !m.pricedExact {
+                    Text("?").font(.system(size: 8.5, weight: .bold)).foregroundStyle(dc.warn)
+                        .frame(width: 12, height: 12)
+                        .background(Circle().fill(dc.warn.opacity(0.16)))
+                        .help("价格为近似估算：该模型不在内置价格表，按家族/兜底价计")
+                }
                 Spacer()
                 Text(metric == .cost ? Panel.tok(m.tokens.total) : Panel.usd(m.cost))
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(dc.fg3)

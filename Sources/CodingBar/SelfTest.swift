@@ -29,6 +29,12 @@ enum SelfTest {
         check("aggregator cost non-negative", snap.overview.spend.cost >= 0)
         check("aggregator cache hitRate in 0...1", (0...1).contains(snap.cache.hitRate))
         check("aggregator trend has points", !snap.overview.trend.isEmpty)
+        check("aggregator 3 overviews (today/week/month)",
+              Set(snap.overviews.map { $0.range }) == Set([.today, .week, .month]))
+        // Per-range composition: wider windows include at least as many models as today.
+        let monthModels = snap.overviews.first { $0.range == .month }?.models.count ?? 0
+        let todayModels = snap.overviews.first { $0.range == .today }?.models.count ?? 0
+        check("month composition ⊇ today", monthModels >= todayModels)
 
         // ── Quota (offline: credential + response parsing, no network) ──────────
         let claudeCred = CredentialParser.parseClaudeCredentials(

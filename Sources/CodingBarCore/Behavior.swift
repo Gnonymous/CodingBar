@@ -4,14 +4,17 @@ enum Behavior {
 
     // MARK: - Tool classification
 
-    /// Map a tool name to one of the five ToolMix buckets.
+    /// Map a tool name to one of the five ToolMix buckets. Covers Claude tool names
+    /// and Codex `function_call` names (exec_command/write_stdin run a shell, so they
+    /// land in `run`; Codex edits files *through* exec_command, so there's no separate
+    /// write bucket for it).
     static func bucket(toolName: String) -> WritableKeyPath<ToolMix, Int> {
         switch toolName {
         case "Edit", "Write", "MultiEdit", "NotebookEdit":
             return \.write
-        case "Read", "Grep", "Glob", "LS":
+        case "Read", "Grep", "Glob", "LS", "view_image":
             return \.read
-        case "Bash":
+        case "Bash", "exec_command", "write_stdin":
             return \.run
         case "WebSearch", "WebFetch":
             return \.search
@@ -23,8 +26,7 @@ enum Behavior {
     static func toolMix(from records: [RawRecord], todayStart: Date, now: Date) -> ToolMix {
         var mix = ToolMix()
         for r in records {
-            guard r.provider == .claude,
-                  r.timestamp >= todayStart, r.timestamp <= now else { continue }
+            guard r.timestamp >= todayStart, r.timestamp <= now else { continue }
             for name in r.toolNames {
                 let kp = bucket(toolName: name)
                 mix[keyPath: kp] += 1

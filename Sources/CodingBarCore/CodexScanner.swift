@@ -42,6 +42,10 @@ public enum CodexScanner {
         // of `total_token_usage` reconstructs each turn's true increment, drops
         // duplicate snapshots (Δ≤0), and preserves per-turn timestamps for bucketing.
         var prevInput = 0, prevCached = 0, prevOutput = 0, prevReasoning = 0
+        // Codex tool calls (`function_call` response items, e.g. exec_command) arrive
+        // before the turn's `token_count`; buffer their names and attach them to the
+        // next emitted record so the habits tool-mix counts Codex, not just Claude.
+        var pendingTools: [String] = []
 
         data.forEachLine { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -66,6 +70,13 @@ public enum CodexScanner {
                    let payload = obj["payload"] as? [String: Any],
                    let m = payload["model"] as? String {
                     model = m
+                }
+
+            case "response_item":
+                if let payload = obj["payload"] as? [String: Any],
+                   payload["type"] as? String == "function_call",
+                   let name = payload["name"] as? String {
+                    pendingTools.append(name)
                 }
 
             case "event_msg":
@@ -101,7 +112,12 @@ public enum CodexScanner {
                 guard dInput + dOutput > 0 else { return }
 
                 // Unparseable/absent timestamp → DROP rather than fall back to Date().
-                guard let timestamp = iso.date(from: obj["timestamp"] as? String ?? payload["timestamp"] as? String) else { return }
+                // Clear this turn's buffered tools too (they belong to the dropped record,
+                // not the next one). NOTE: the Δ≤0 guard above must NOT clear — that's a
+                // replay of the same turn whose tools still belong to the eventual record.
+                guard let timestamp = iso.date(from: obj["timestamp"] as? String ?? payload["timestamp"] as? String) else {
+                    pendingTools.removeAll(keepingCapacity: true); return
+                }
 
                 // Codex: input_tokens INCLUDES cached; net fresh input = input − cached.
                 // Clamp the cached delta at 0 first so a (data-wise unreachable) cached
@@ -122,13 +138,14 @@ public enum CodexScanner {
                     timestamp: timestamp,
                     cwd: cwd,
                     tokens: tokens,
-                    toolName: nil,
-                    toolNames: [],
+                    toolName: pendingTools.first,
+                    toolNames: pendingTools,
                     messageId: nil,
                     sessionKey: sessionKey,
                     hasInterrupt: false
                 )
                 records.append(record)
+                pendingTools.removeAll(keepingCapacity: true)
 
             default:
                 break

@@ -70,7 +70,7 @@ struct PanelView: View {
 
     @ViewBuilder private var tabContent: some View {
         switch tab {
-        case 1: CostTab(snap: snap, metric: store.menuMetric)
+        case 1: CostTab(store: store)
         case 2: InsightsTab(store: store)
         default: OverviewTab(store: store, onShowInsights: { tab = 2 })
         }

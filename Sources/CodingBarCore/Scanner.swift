@@ -56,8 +56,9 @@ final class Scanner {
     /// file) would otherwise keep serving records produced by the old parser. Bump this
     /// whenever a scanner's output for an unchanged file changes; a version mismatch is
     /// ignored (→ one full rescan with the new parser). v2: Codex switched from summing
-    /// `last_token_usage` to the delta of `total_token_usage`.
-    private static let cacheVersion = 2
+    /// `last_token_usage` to the delta of `total_token_usage`. v3: Codex records now
+    /// carry tool names parsed from `function_call` items.
+    private static let cacheVersion = 3
 
     private struct CacheFile: Codable {
         var version: Int
