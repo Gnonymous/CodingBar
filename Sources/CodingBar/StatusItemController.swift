@@ -45,13 +45,16 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func showContextMenu(from button: NSStatusBarButton) {
+        let lang = store.language
         let menu = NSMenu()
-        let metricTitle = store.menuMetric == .tokens ? "菜单栏显示：今日花费" : "菜单栏显示：今日 Token"
+        let metricTitle = store.menuMetric == .tokens
+            ? lang.t("Menu bar: today's cost", "菜单栏显示：今日花费")
+            : lang.t("Menu bar: today's tokens", "菜单栏显示：今日 Token")
         let metric = NSMenuItem(title: metricTitle, action: #selector(toggleMetric), keyEquivalent: "")
         metric.target = self
         menu.addItem(metric)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "退出 CodingBar", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: lang.t("Quit CodingBar", "退出 CodingBar"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 5), in: button)

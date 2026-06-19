@@ -11,6 +11,7 @@ struct OverviewTab: View {
     private var snap: Snapshot { store.snapshot }
     private var range: Range { store.selectedRange }
     private var metric: MenuMetric { store.menuMetric }
+    private var lang: AppLanguage { store.language }
     private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
 
     private var sessions: [LiveSession] { snap.liveSessions }
@@ -44,7 +45,7 @@ struct OverviewTab: View {
         DCSection(bottomPad: 13) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    DCLabel(metric == .cost ? "花费" : "Token"); Spacer()
+                    DCLabel(metric == .cost ? lang.t("Cost", "花费") : lang.t("Tokens", "Token")); Spacer()
                     DCRangeSeg(selected: range, onSelect: store.setRange)
                 }
                 .padding(.bottom, 9)
@@ -70,7 +71,7 @@ struct OverviewTab: View {
                             Spacer()
                             gitCaption
                             Spacer()
-                            Text("今日")
+                            Text(lang.t("Today", "今日"))
                         }
                         .font(.system(size: 9)).foregroundStyle(dc.fg3)
                         // Match the sparkline's internal horizontal inset (pad = 3) so the
@@ -81,9 +82,9 @@ struct OverviewTab: View {
                 }
 
                 HStack(spacing: 6) {
-                    effCard(effLines, metric == .cost ? "行 / $" : "行 / M tok")
-                    effCard(effPerCommit, "每 commit")
-                    effCard(effCache, "缓存抵扣", emphasize: true)
+                    effCard(effLines, metric == .cost ? lang.t("lines / $", "行 / $") : lang.t("lines / M tok", "行 / M tok"))
+                    effCard(effPerCommit, lang.t("per commit", "每 commit"))
+                    effCard(effCache, lang.t("cache savings", "缓存抵扣"), emphasize: true)
                 }
                 .padding(.top, 11)
             }
@@ -119,26 +120,32 @@ struct OverviewTab: View {
             switch range {
             case .today:
                 if isBurning {
-                    return "当前 ~\(Panel.usd0(snap.burnPerMin * 60))/小时 · 预计今日 ~\(Panel.usd0(cost * 1.32))"
+                    return lang.t("~\(Panel.usd0(snap.burnPerMin * 60))/hr now · ~\(Panel.usd0(cost * 1.32)) projected today",
+                                  "当前 ~\(Panel.usd0(snap.burnPerMin * 60))/小时 · 预计今日 ~\(Panel.usd0(cost * 1.32))")
                 }
-                return "已停止燃烧 · 今日累计 \(Panel.usd(cost))"
+                return lang.t("Idle · \(Panel.usd(cost)) today", "已停止燃烧 · 今日累计 \(Panel.usd(cost))")
             case .week:
-                return "日均 ~\(Panel.usd0(cost / 7)) · 本月预计 ~\(Panel.usd0(cost / 7 * 30))"
+                return lang.t("~\(Panel.usd0(cost / 7))/day · ~\(Panel.usd0(cost / 7 * 30)) projected this month",
+                              "日均 ~\(Panel.usd0(cost / 7)) · 本月预计 ~\(Panel.usd0(cost / 7 * 30))")
             case .month:
-                return "日均 ~\(Panel.usd0(cost / 30)) · 月度合计 \(Panel.usd0(cost))"
+                return lang.t("~\(Panel.usd0(cost / 30))/day · \(Panel.usd0(cost)) this month",
+                              "日均 ~\(Panel.usd0(cost / 30)) · 月度合计 \(Panel.usd0(cost))")
             }
         case .tokens:
             let tk = ov.spend.tokens.total
             switch range {
             case .today:
                 if isBurning {
-                    return "当前 ~\(Panel.tok(aggTput * 3600))/小时 · 预计今日 ~\(Panel.tok(Int(Double(tk) * 1.32)))"
+                    return lang.t("~\(Panel.tok(aggTput * 3600))/hr now · ~\(Panel.tok(Int(Double(tk) * 1.32))) projected today",
+                                  "当前 ~\(Panel.tok(aggTput * 3600))/小时 · 预计今日 ~\(Panel.tok(Int(Double(tk) * 1.32)))")
                 }
-                return "已停止燃烧 · 今日累计 \(Panel.tok(tk))"
+                return lang.t("Idle · \(Panel.tok(tk)) today", "已停止燃烧 · 今日累计 \(Panel.tok(tk))")
             case .week:
-                return "日均 ~\(Panel.tok(tk / 7)) · 本月预计 ~\(Panel.tok(tk / 7 * 30))"
+                return lang.t("~\(Panel.tok(tk / 7))/day · ~\(Panel.tok(tk / 7 * 30)) projected this month",
+                              "日均 ~\(Panel.tok(tk / 7)) · 本月预计 ~\(Panel.tok(tk / 7 * 30))")
             case .month:
-                return "日均 ~\(Panel.tok(tk / 30)) · 月度合计 \(Panel.tok(tk))"
+                return lang.t("~\(Panel.tok(tk / 30))/day · \(Panel.tok(tk)) this month",
+                              "日均 ~\(Panel.tok(tk / 30)) · 月度合计 \(Panel.tok(tk))")
             }
         }
     }
@@ -182,7 +189,7 @@ struct OverviewTab: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 7) {
                     BreathingDot(size: 7, color: isBurning ? dc.good : dc.fg3, animate: isBurning)
-                    DCLabel("实时燃烧"); Spacer()
+                    DCLabel(lang.t("Live burn", "实时燃烧")); Spacer()
                     if isBurning {
                         Text("\(aggTput) tok/s").font(.system(size: 11)).monospacedDigit().foregroundStyle(dc.fg2)
                     }
@@ -194,16 +201,16 @@ struct OverviewTab: View {
                         Text(metric == .cost ? Panel.usd(snap.burnPerMin) : Panel.tok(aggTput * 60))
                             .font(.system(size: 23, weight: .bold)).monospacedDigit().tracking(-0.46)
                             .foregroundStyle(dc.fg)
-                        Text("/ 分钟").font(.system(size: 11)).foregroundStyle(dc.fg3).padding(.bottom, 2)
+                        Text(lang.t("/ min", "/ 分钟")).font(.system(size: 11)).foregroundStyle(dc.fg3).padding(.bottom, 2)
                         Spacer()
-                        Text("\(sessions.count) 个会话并行").font(.system(size: 11)).foregroundStyle(dc.fg2).padding(.bottom, 2)
+                        Text(lang.t("\(sessions.count) in parallel", "\(sessions.count) 个会话并行")).font(.system(size: 11)).foregroundStyle(dc.fg2).padding(.bottom, 2)
                     }
                     .padding(.bottom, 11)
                     VStack(spacing: 8) {
                         ForEach(Array(sessions.enumerated()), id: \.element.id) { i, s in sessionRow(s, index: i) }
                     }
                 } else {
-                    Text("空闲 · 当前无会话燃烧")
+                    Text(lang.t("Idle · no active sessions", "空闲 · 当前无会话燃烧"))
                         .font(.system(size: 11)).foregroundStyle(dc.fg3)
                         .frame(maxWidth: .infinity).padding(12)
                         .background(RoundedRectangle(cornerRadius: 9).fill(dc.elev))
@@ -241,14 +248,14 @@ struct OverviewTab: View {
     private var savings: some View {
         DCSection {
             VStack(alignment: .leading, spacing: 0) {
-                HStack { DCLabel("省钱"); Spacer(); Text("累计").font(.system(size: 10)).foregroundStyle(dc.fg3) }
+                HStack { DCLabel(lang.t("Savings", "省钱")); Spacer(); Text(lang.t("all-time", "累计")).font(.system(size: 10)).foregroundStyle(dc.fg3) }
                     .padding(.bottom, 9)
                 HStack(spacing: 8) {
                     Text("✓").font(.system(size: 11, weight: .bold)).foregroundStyle(dc.good)
                         .frame(width: 18, height: 18)
                         .background(RoundedRectangle(cornerRadius: 5).fill(dc.fixedGood.opacity(0.16)))
-                    (Text("缓存命中 ") + Text("\(Int((snap.cache.hitRate * 100).rounded()))%").bold()
-                        + Text(" · 已省下 ") + Text(Panel.usd(snap.cache.savedUSD)).bold())
+                    (Text(lang.t("Cache hit ", "缓存命中 ")) + Text("\(Int((snap.cache.hitRate * 100).rounded()))%").bold()
+                        + Text(lang.t(" · saved ", " · 已省下 ")) + Text(Panel.usd(snap.cache.savedUSD)).bold())
                         .font(.system(size: 11.5)).foregroundStyle(dc.fg)
                 }
                 if let tip { tipCard(tip).padding(.top, 10) }
@@ -258,19 +265,19 @@ struct OverviewTab: View {
 
     private func tipCard(_ tip: Insight) -> some View {
         HStack(alignment: .top, spacing: 9) {
-            Text("省").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+            Text(lang.t("$", "省")).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 18, height: 18).background(RoundedRectangle(cornerRadius: 5).fill(dc.accent))
             VStack(alignment: .leading, spacing: 6) {
                 Text(tip.text).font(.system(size: 11)).foregroundStyle(dc.fg)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                 if let sav = tip.savingUSD {
                     HStack(spacing: 7) {
-                        Text("今日可省 \(Panel.usd(sav))")
+                        Text(lang.t("Save \(Panel.usd(sav)) today", "今日可省 \(Panel.usd(sav))"))
                             .font(.system(size: 10.5, weight: .bold)).monospacedDigit().foregroundStyle(.white)
                             .padding(.horizontal, 8).padding(.vertical, 2)
                             .background(RoundedRectangle(cornerRadius: 6).fill(dc.good))
                         Button { onShowInsights() } label: {
-                            Text("更多建议 →").font(.system(size: 10, weight: .semibold)).foregroundStyle(dc.accent)
+                            Text(lang.t("More tips →", "更多建议 →")).font(.system(size: 10, weight: .semibold)).foregroundStyle(dc.accent)
                         }
                         .buttonStyle(.plain).focusEffectDisabled()
                     }
@@ -289,8 +296,8 @@ struct OverviewTab: View {
         DCSection {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    DCLabel("额度"); Spacer()
-                    Text("联网 · \(Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt))")
+                    DCLabel(lang.t("Quota", "额度")); Spacer()
+                    Text(lang.t("online · ", "联网 · ") + Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt, lang: lang))
                         .font(.system(size: 9.5)).foregroundStyle(dc.fg3)
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 5).fill(dc.hover))
@@ -326,11 +333,11 @@ struct OverviewTab: View {
                     // This provider's true data age (ages during cache-hits / failures;
                     // resets only on a real fetch), so a stale group reads honestly.
                     if let fetched = snap.quotaFetchedByProvider[provider.rawValue] {
-                        Text(Panel.age(fetched, now: snap.generatedAt))
+                        Text(Panel.age(fetched, now: snap.generatedAt, lang: lang))
                             .font(.system(size: 9)).foregroundStyle(dc.fg3)
                     }
                     Rectangle().fill(dc.sep).frame(height: 1)
-                    Text("已用").font(.system(size: 9)).foregroundStyle(dc.fg3)
+                    Text(lang.t("used", "已用")).font(.system(size: 9)).foregroundStyle(dc.fg3)
                 }
                 .padding(.top, 2).padding(.bottom, 7)
 
@@ -352,7 +359,7 @@ struct OverviewTab: View {
         let used = 1 - w.remaining
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 8) {
-                Text(Panel.windowLabel(w.label)).font(.system(size: 11, weight: .medium))
+                Text(Panel.windowLabel(w.label, lang: lang)).font(.system(size: 11, weight: .medium))
                     .foregroundStyle(dc.fg).frame(width: 84, alignment: .leading)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -367,7 +374,7 @@ struct OverviewTab: View {
                     .foregroundStyle(dc.usedSev(used)).frame(width: 32, alignment: .trailing)
             }
             .padding(.top, 4)
-            Text(Panel.quotaReset(w.resetAt, now: snap.generatedAt))
+            Text(Panel.quotaReset(w.resetAt, now: snap.generatedAt, lang: lang))
                 .font(.system(size: 9.5)).foregroundStyle(dc.fg3)
                 .padding(.leading, 92).padding(.bottom, 2)
         }
@@ -401,8 +408,9 @@ struct CostTab: View {
     private var snap: Snapshot { store.snapshot }
     private var metric: MenuMetric { store.menuMetric }
     private var range: Range { store.selectedRange }
+    private var lang: AppLanguage { store.language }
     private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
-    private var rangeLabel: String { switch range { case .today: "今日"; case .week: "近 7 天"; case .month: "近 30 天" } }
+    private var rangeLabel: String { switch range { case .today: lang.t("Today", "今日"); case .week: lang.t("Last 7d", "近 7 天"); case .month: lang.t("Last 30d", "近 30 天") } }
     // Only fall back to the all-time lists for placeholder snapshots that carry NO
     // per-range composition at all (sample / --render-panel). A real snapshot whose
     // *selected* range is genuinely empty (no activity yet today) must render empty to
@@ -431,7 +439,7 @@ struct CostTab: View {
             DCSection {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        DCLabel(metric == .cost ? "按模型 · 花费" : "按模型 · Token")
+                        DCLabel(metric == .cost ? lang.t("By model · cost", "按模型 · 花费") : lang.t("By model · tokens", "按模型 · Token"))
                         Spacer()
                         DCRangeSeg(selected: range, onSelect: store.setRange)
                     }
@@ -452,7 +460,7 @@ struct CostTab: View {
             if !sortedProjects.isEmpty {
                 DCSection {
                     VStack(alignment: .leading, spacing: 0) {
-                        DCLabel(metric == .cost ? "按项目 · 花费" : "按项目 · Token").padding(.bottom, 11)
+                        DCLabel(metric == .cost ? lang.t("By project · cost", "按项目 · 花费") : lang.t("By project · tokens", "按项目 · Token")).padding(.bottom, 11)
                         VStack(alignment: .leading, spacing: 9) {
                             ForEach(shownProjects) { projRow($0) }
                         }
@@ -466,8 +474,18 @@ struct CostTab: View {
         }
     }
 
+    // Empty-state copy needs its own English wording: "No spend in Today" / "in Last 7d"
+    // are ungrammatical, so it diverges from the range label used in the section header.
+    private var emptyHintText: String {
+        switch range {
+        case .today: return lang.t("No spend today", "今日暂无消费记录")
+        case .week:  return lang.t("No spend in the last 7d", "近 7 天暂无消费记录")
+        case .month: return lang.t("No spend in the last 30d", "近 30 天暂无消费记录")
+        }
+    }
+
     private var emptyHint: some View {
-        Text("\(rangeLabel)暂无消费记录")
+        Text(emptyHintText)
             .font(.system(size: 11)).foregroundStyle(dc.fg3)
             .frame(maxWidth: .infinity).padding(12)
             .background(RoundedRectangle(cornerRadius: 9).fill(dc.elev))
@@ -478,7 +496,7 @@ struct CostTab: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold))
-                Text(expanded ? "收起" : "展开其余 \(hidden) 项").font(.system(size: 10.5, weight: .medium))
+                Text(expanded ? lang.t("Collapse", "收起") : lang.t("Show \(hidden) more", "展开其余 \(hidden) 项")).font(.system(size: 10.5, weight: .medium))
             }
             .foregroundStyle(dc.accent)
             .contentShape(Rectangle())
@@ -501,7 +519,8 @@ struct CostTab: View {
                     Text("?").font(.system(size: 8.5, weight: .bold)).foregroundStyle(dc.warn)
                         .frame(width: 12, height: 12)
                         .background(Circle().fill(dc.warn.opacity(0.16)))
-                        .help("价格为近似估算：该模型不在内置价格表，按家族/兜底价计")
+                        .help(lang.t("Estimated price: model not in the pricing table (family/fallback rate used)",
+                                     "价格为近似估算：该模型不在内置价格表，按家族/兜底价计"))
                 }
                 Spacer()
                 Text(metric == .cost ? Panel.tok(m.tokens.total) : Panel.usd(m.cost))
@@ -547,7 +566,7 @@ struct CostTab: View {
 
     private func lastLabel(_ d: Date) -> String {
         let cal = Calendar.current
-        if cal.isDateInToday(d) { return "今天" }
+        if cal.isDateInToday(d) { return lang.t("today", "今天") }
         let f = DateFormatter(); f.dateFormat = "M/d"; return f.string(from: d)
     }
 }
@@ -559,8 +578,9 @@ struct InsightsTab: View {
     @ObservedObject var store: UsageStore
     private var snap: Snapshot { store.snapshot }
     private var range: Range { store.selectedRange }
+    private var lang: AppLanguage { store.language }
     private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
-    private var rangeLabel: String { switch range { case .today: "今日"; case .week: "近 7 天"; case .month: "近 30 天" } }
+    private var rangeLabel: String { switch range { case .today: lang.t("Today", "今日"); case .week: lang.t("Last 7d", "近 7 天"); case .month: lang.t("Last 30d", "近 30 天") } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -574,7 +594,7 @@ struct InsightsTab: View {
         DCSection {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    DCLabel("代码产出"); Spacer()
+                    DCLabel(lang.t("Code output", "代码产出")); Spacer()
                     Text("\(rangeLabel) · git").font(.system(size: 10)).foregroundStyle(dc.fg3)
                 }
                 .padding(.bottom, 9)
@@ -582,7 +602,7 @@ struct InsightsTab: View {
                     Text("+\(Panel.int(ov.output.added))").font(.system(size: 15, weight: .bold)).monospacedDigit().foregroundStyle(dc.good)
                     Text("−\(Panel.int(ov.output.removed))").font(.system(size: 15, weight: .bold)).monospacedDigit().foregroundStyle(dc.bad)
                     Spacer()
-                    Text("\(ov.output.commits) commit · \(ov.output.files) 文件").font(.system(size: 11)).foregroundStyle(dc.fg2)
+                    Text(lang.t("\(ov.output.commits) commits · \(ov.output.files) files", "\(ov.output.commits) commit · \(ov.output.files) 文件")).font(.system(size: 11)).foregroundStyle(dc.fg2)
                 }
                 DCRatioBar(added: ov.output.added, removed: ov.output.removed).padding(.top, 8)
             }
@@ -592,12 +612,12 @@ struct InsightsTab: View {
     private var habitsBlock: some View {
         DCSection {
             VStack(alignment: .leading, spacing: 0) {
-                Text("工具使用占比").font(.system(size: 9.5)).foregroundStyle(dc.fg3).padding(.bottom, 5)
+                Text(lang.t("Tool usage mix", "工具使用占比")).font(.system(size: 9.5)).foregroundStyle(dc.fg3).padding(.bottom, 5)
                 DCToolMix(mix: snap.habits.toolMix)
                 HStack {
-                    Text("活跃热力 · 7 天").font(.system(size: 9.5)).foregroundStyle(dc.fg3)
+                    Text(lang.t("Activity heatmap · 7d", "活跃热力 · 7 天")).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
                     Spacer()
-                    Text("高峰 \(snap.habits.heatmap.peakLabel)").font(.system(size: 9.5)).foregroundStyle(dc.fg2)
+                    Text(lang.t("Peak \(snap.habits.heatmap.peakLabel)", "高峰 \(snap.habits.heatmap.peakLabel)")).font(.system(size: 9.5)).foregroundStyle(dc.fg2)
                 }
                 .padding(.top, 13).padding(.bottom, 6)
                 DCHeatGrid(cells: snap.habits.heatmap.cells)
@@ -608,7 +628,7 @@ struct InsightsTab: View {
     private var coachBlock: some View {
         DCSection {
             VStack(alignment: .leading, spacing: 0) {
-                DCLabel("建议").padding(.bottom, 10)
+                DCLabel(lang.t("Tips", "建议")).padding(.bottom, 10)
                 VStack(spacing: 8) {
                     ForEach(snap.coach) { coachCard($0) }
                 }
@@ -619,9 +639,9 @@ struct InsightsTab: View {
     private func coachCard(_ c: Insight) -> some View {
         let meta: (String, Color) = {
             switch c.kind {
-            case .tip: return ("省", dc.good)
-            case .forecast: return ("预", dc.warn)
-            case .milestone: return ("里", dc.accent)
+            case .tip: return (lang.t("$", "省"), dc.good)
+            case .forecast: return (lang.t("~", "预"), dc.warn)
+            case .milestone: return (lang.t("★", "里"), dc.accent)
             }
         }()
         return HStack(alignment: .top, spacing: 9) {
@@ -632,7 +652,7 @@ struct InsightsTab: View {
                 Text(c.text).font(.system(size: 11)).foregroundStyle(dc.fg)
                     .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                 if let s = c.savingUSD {
-                    Text("可省 \(Panel.usd(s))").font(.system(size: 10.5, weight: .bold)).monospacedDigit().foregroundStyle(.white)
+                    Text(lang.t("Save \(Panel.usd(s))", "可省 \(Panel.usd(s))")).font(.system(size: 10.5, weight: .bold)).monospacedDigit().foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 6).fill(dc.good))
                 }

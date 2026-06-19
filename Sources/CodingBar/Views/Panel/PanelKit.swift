@@ -36,46 +36,52 @@ enum Panel {
         var r = s; while r.hasSuffix("0") { r.removeLast() }; if r.hasSuffix(".") { r.removeLast() }; return r
     }
 
-    /// "46 秒前" / "3 分钟前" / "2 小时前"
-    static func age(_ date: Date?, now: Date = Date()) -> String {
+    /// "46s ago" / "3m ago" / "2h ago" (or 秒/分钟/小时前)
+    static func age(_ date: Date?, now: Date = Date(), lang: AppLanguage = .en) -> String {
         guard let date else { return "—" }
         let s = max(0, now.timeIntervalSince(date))
-        if s < 60 { return "\(Int(s)) 秒前" }
-        if s < 3600 { return "\(Int(s / 60)) 分钟前" }
-        if s < 86_400 { return "\(Int(s / 3600)) 小时前" }
-        return "\(Int(s / 86_400)) 天前"
+        if s < 60 { return lang.t("\(Int(s))s ago", "\(Int(s)) 秒前") }
+        if s < 3600 { return lang.t("\(Int(s / 60))m ago", "\(Int(s / 60)) 分钟前") }
+        if s < 86_400 { return lang.t("\(Int(s / 3600))h ago", "\(Int(s / 3600)) 小时前") }
+        return lang.t("\(Int(s / 86_400))d ago", "\(Int(s / 86_400)) 天前")
     }
 
     private static let hm: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
     static func clock(_ date: Date) -> String { hm.string(from: date) }
 
-    /// "重置 · 3 小时 12 分后" / "重置 · 明日 08:30" / "重置 · 周日 17:00"
-    static func quotaReset(_ date: Date?, now: Date = Date()) -> String {
+    private static func weekdayShort(_ date: Date, _ lang: AppLanguage) -> String {
+        let cal = Calendar.current
+        let names = lang.t("Sun Mon Tue Wed Thu Fri Sat", "周日 周一 周二 周三 周四 周五 周六").split(separator: " ").map(String.init)
+        return names[cal.component(.weekday, from: date) - 1]
+    }
+
+    /// "Resets in 3h 12m" / "Resets tomorrow 08:30" / "Resets Sun 17:00" (or 重置 · …)
+    static func quotaReset(_ date: Date?, now: Date = Date(), lang: AppLanguage = .en) -> String {
         guard let date else { return "" }
         let s = date.timeIntervalSince(now)
-        if s <= 0 { return "重置 · 即将" }
+        if s <= 0 { return lang.t("Resets soon", "重置 · 即将") }
         let cal = Calendar.current
         if s < 86_400 {
             let h = Int(s) / 3600, m = (Int(s) % 3600) / 60
-            if h > 0 { return "重置 · \(h) 小时" + (m > 0 ? " \(m) 分" : "") + "后" }
-            return "重置 · \(m) 分钟后"
+            if h > 0 { return lang.t("Resets in \(h)h" + (m > 0 ? " \(m)m" : ""), "重置 · \(h) 小时" + (m > 0 ? " \(m) 分" : "") + "后") }
+            return lang.t("Resets in \(m)m", "重置 · \(m) 分钟后")
         }
         let t = hm.string(from: date)
         if let tmr = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)),
            cal.isDate(date, inSameDayAs: tmr) {
-            return "重置 · 明日 \(t)"
+            return lang.t("Resets tomorrow \(t)", "重置 · 明日 \(t)")
         }
-        let wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][cal.component(.weekday, from: date) - 1]
-        return "重置 · \(wd) \(t)"
+        let wd = weekdayShort(date, lang)
+        return lang.t("Resets \(wd) \(t)", "重置 · \(wd) \(t)")
     }
 
     /// Pretty quota-window label (prototype `niceLabel`).
-    static func windowLabel(_ raw: String) -> String {
+    static func windowLabel(_ raw: String, lang: AppLanguage = .en) -> String {
         switch raw {
-        case "5h": return "5 小时"
-        case "7d": return "7 天"
-        case "7d·Opus": return "7 天 · Opus"
-        case "7d·Sonnet": return "7 天 · Sonnet"
+        case "5h": return lang.t("5 hours", "5 小时")
+        case "7d": return lang.t("7 days", "7 天")
+        case "7d·Opus": return lang.t("7 days · Opus", "7 天 · Opus")
+        case "7d·Sonnet": return lang.t("7 days · Sonnet", "7 天 · Sonnet")
         default: return raw
         }
     }
@@ -121,9 +127,10 @@ struct DCLabel: View {
 /// Range segmented control (今日 / 7 天 / 30 天) — segbg track, selected pill raised.
 struct DCRangeSeg: View {
     @Environment(\.dc) private var dc
+    @Environment(\.lang) private var lang
     let selected: Range
     let onSelect: (Range) -> Void
-    private let opts: [(Range, String)] = [(.today, "今日"), (.week, "7 天"), (.month, "30 天")]
+    private var opts: [(Range, String)] { [(.today, lang.t("Today", "今日")), (.week, lang.t("7d", "7 天")), (.month, lang.t("30d", "30 天"))] }
     var body: some View {
         HStack(spacing: 1) {
             ForEach(opts, id: \.0) { r, label in

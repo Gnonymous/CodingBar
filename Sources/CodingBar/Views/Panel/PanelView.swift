@@ -25,8 +25,12 @@ struct PanelView: View {
     private var snap: Snapshot { store.snapshot }
     // Appearance follows the system (the popover inherits NSApp.effectiveAppearance).
     private var dc: DCTheme { systemScheme == .dark ? .dark : .light }
+    // Read the language from the store directly: a view can't read an environment value
+    // it sets on itself (that only flows to descendants), so PanelView's own chrome uses
+    // store.language while descendants read \.lang.
+    private var lang: AppLanguage { store.language }
     private var burning: Bool { !snap.liveSessions.isEmpty }
-    private var statusText: String { burning ? "\(snap.liveSessions.count) 会话" : "空闲" }
+    private var statusText: String { burning ? lang.t("\(snap.liveSessions.count) sessions", "\(snap.liveSessions.count) 会话") : lang.t("Idle", "空闲") }
 
     /// Cap the scrollable region so a tall tab can't push the popover off-screen
     /// (header / provenance / nav stay pinned; only the tab body scrolls).
@@ -46,6 +50,7 @@ struct PanelView: View {
         .frame(width: Panel.width)
         .background(dc.bg)
         .environment(\.dc, dc)
+        .environment(\.lang, store.language)
     }
 
     private var mainPanel: some View {
@@ -102,7 +107,7 @@ struct PanelView: View {
                 Image(systemName: "gearshape").font(.system(size: 9, weight: .regular)).foregroundStyle(dc.fg3)
                     .padding(.horizontal, 3).padding(.vertical, 1).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).focusEffectDisabled().help("设置")
+            .buttonStyle(.plain).focusEffectDisabled().help(lang.t("Settings", "设置"))
         }
         .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
     }
@@ -119,7 +124,8 @@ struct PanelView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain).focusEffectDisabled()
-        .help(isCost ? "当前显示：花费 · 点击切换为 Token" : "当前显示：Token · 点击切换为花费")
+        .help(isCost ? lang.t("Showing cost · tap for tokens", "当前显示：花费 · 点击切换为 Token")
+                     : lang.t("Showing tokens · tap for cost", "当前显示：Token · 点击切换为花费"))
     }
 
     /// CodingBar's own mark: the pulse heartbeat on an accent tile (our identity,
@@ -147,12 +153,12 @@ struct PanelView: View {
     private var provenance: some View {
         HStack(spacing: 6) {
             Circle().fill(dc.good).frame(width: 5, height: 5)
-            Text("本地实时").font(.system(size: 10)).foregroundStyle(dc.fg3)
+            Text(lang.t("Local · live", "本地实时")).font(.system(size: 10)).foregroundStyle(dc.fg3)
             Text("·").font(.system(size: 10)).foregroundStyle(dc.fg3.opacity(0.4))
-            Text("额度联网 \(Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt))")
+            Text(lang.t("Quota ", "额度联网 ") + Panel.age(snap.quotaFetchedAt ?? snap.generatedAt, now: snap.generatedAt, lang: lang))
                 .font(.system(size: 10)).foregroundStyle(dc.fg3)
             Spacer()
-            Text("\(Panel.clock(snap.generatedAt)) 刷新").font(.system(size: 10)).foregroundStyle(dc.fg3)
+            Text(lang.t("\(Panel.clock(snap.generatedAt)) refreshed", "\(Panel.clock(snap.generatedAt)) 刷新")).font(.system(size: 10)).foregroundStyle(dc.fg3)
         }
         .padding(.horizontal, 13).padding(.top, 7).padding(.bottom, 8)
         .overlay(Rectangle().fill(dc.sep).frame(height: 1), alignment: .top)
@@ -162,9 +168,9 @@ struct PanelView: View {
 
     private var bottomNav: some View {
         HStack(spacing: 0) {
-            navButton(0, "总览")
-            navButton(1, "构成")
-            navButton(2, "洞察")
+            navButton(0, lang.t("Overview", "总览"))
+            navButton(1, lang.t("Cost", "构成"))
+            navButton(2, lang.t("Insights", "洞察"))
         }
         .background(dc.navbg)
         .overlay(Rectangle().fill(dc.sep).frame(height: 1), alignment: .top)

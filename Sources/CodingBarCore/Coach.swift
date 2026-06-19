@@ -17,7 +17,7 @@ enum Coach {
         record.toolNames.count <= 1 && record.tokens.output < 300
     }
 
-    static func opusOnSimpleTip(from todayRecords: [RawRecord]) -> Insight? {
+    static func opusOnSimpleTip(from todayRecords: [RawRecord], language: AppLanguage) -> Insight? {
         let claudeToday = todayRecords.filter { $0.provider == .claude }
 
         // Cost delta: only count the non-cached input (cache tokens are already cheap
@@ -56,11 +56,14 @@ enum Coach {
 
         guard totalSaved >= 0.2 else { return nil }
 
-        let text = "\(count) 个简单任务用了 Opus。换 Haiku 同样能完成，今天可省 ~$\(String(format: "%.2f", totalSaved))。"
+        let saved = String(format: "%.2f", totalSaved)
+        let text = language.t(
+            "\(count) simple tasks ran on Opus. Haiku could handle them — save ~$\(saved) today.",
+            "\(count) 个简单任务用了 Opus。换 Haiku 同样能完成，今天可省 ~$\(saved)。")
         return Insight(kind: .tip, text: text, savingUSD: totalSaved)
     }
 
-    static func cacheWasteTip(from todayRecords: [RawRecord]) -> Insight? {
+    static func cacheWasteTip(from todayRecords: [RawRecord], language: AppLanguage) -> Insight? {
         let claudeToday = todayRecords.filter { $0.provider == .claude }
 
         var totalWrite = 0
@@ -85,20 +88,20 @@ enum Coach {
         // Only flag if cache write cost is material
         guard totalWriteCost >= 0.1 else { return nil }
 
-        let text = String(format: "今日缓存复用率仅 %.0f%%（写入 %dK token，命中 %dK）。考虑保持上下文跨 session 连续。",
-                          reuseRatio * 100,
-                          totalWrite / 1000,
-                          totalRead / 1000)
+        let pct = Int((reuseRatio * 100).rounded()), wK = totalWrite / 1000, rK = totalRead / 1000
+        let text = language.t(
+            "Only \(pct)% cache reuse today (\(wK)K written, \(rK)K reused). Try keeping context across sessions.",
+            "今日缓存复用率仅 \(pct)%（写入 \(wK)K token，命中 \(rK)K）。考虑保持上下文跨 session 连续。")
         return Insight(kind: .tip, text: text)
     }
 
-    static func build(from todayRecords: [RawRecord]) -> [Insight] {
+    static func build(from todayRecords: [RawRecord], language: AppLanguage) -> [Insight] {
         var tips: [Insight] = []
 
-        if let t1 = opusOnSimpleTip(from: todayRecords) {
+        if let t1 = opusOnSimpleTip(from: todayRecords, language: language) {
             tips.append(t1)
         }
-        if let t2 = cacheWasteTip(from: todayRecords) {
+        if let t2 = cacheWasteTip(from: todayRecords, language: language) {
             tips.append(t2)
         }
 

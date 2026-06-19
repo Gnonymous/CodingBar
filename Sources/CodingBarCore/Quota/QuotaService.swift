@@ -54,15 +54,15 @@ public actor QuotaService {
     /// Returns the cached result when still fresh, otherwise fetches Claude and
     /// Codex concurrently and updates the cache. `force` bypasses the TTL (used by
     /// the manual refresh button).
-    public func current(now: Date = Date(), force: Bool = false) async -> Result {
+    public func current(now: Date = Date(), force: Bool = false, language: AppLanguage = .en) async -> Result {
         if !force, let last = lastFetch, now.timeIntervalSince(last) < ttl() {
             // Cache hit: no network this poll, so the freshness clock must NOT advance.
             return Result(windows: cachedWindows, notes: cachedNotes,
                           fetchedAt: cachedFetchedAt, fetchedAtByProvider: cachedFetchedByProvider)
         }
 
-        async let claude = ClaudeQuotaFetcher().fetch(now: now)
-        async let codex = CodexQuotaFetcher().fetch(now: now)
+        async let claude = ClaudeQuotaFetcher().fetch(now: now, language: language)
+        async let codex = CodexQuotaFetcher().fetch(now: now, language: language)
         let (claudeResult, codexResult) = await (claude, codex)
 
         var notes: [String] = []

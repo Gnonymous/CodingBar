@@ -55,7 +55,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-settings"), i + 1 < Co
     let args = CommandLine.arguments
     let path = args[i + 1]
     let dark = (i + 2 < args.count) ? (args[i + 2].lowercased() != "light") : true
-    MainActor.assumeIsolated { RenderDebug.renderSettings(to: path, dark: dark) }
+    // Optional: --render-settings <path> [light|dark] [en|zh]
+    let lang: AppLanguage = (i + 3 < args.count && args[i + 3].lowercased().hasPrefix("zh")) ? .zh : .en
+    MainActor.assumeIsolated { RenderDebug.renderSettings(to: path, dark: dark, language: lang) }
     exit(0)
 }
 if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < CommandLine.arguments.count {
@@ -63,11 +65,12 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < Comma
     let args = CommandLine.arguments
     let path = args[i + 1]
     let tab = Int(args[i + 2]) ?? 0
-    // Optional: --render-panel <path> <tab> [light|dark] [healthy|degraded|nosession|empty] [cost|tokens]
+    // Optional: --render-panel <path> <tab> [light|dark] [healthy|degraded|nosession|empty] [cost|tokens] [en|zh]
     let dark = (i + 3 < args.count) ? (args[i + 3].lowercased() != "light") : true
     let scenario = (i + 4 < args.count) ? args[i + 4] : "healthy"
     let metric: MenuMetric = (i + 5 < args.count && args[i + 5].lowercased().hasPrefix("tok")) ? .tokens : .cost
-    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab, dark: dark, scenario: scenario, metric: metric) }
+    let lang: AppLanguage = (i + 6 < args.count && args[i + 6].lowercased().hasPrefix("zh")) ? .zh : .en
+    MainActor.assumeIsolated { RenderDebug.renderPanel(to: path, tab: tab, dark: dark, scenario: scenario, metric: metric, language: lang) }
     exit(0)
 }
 

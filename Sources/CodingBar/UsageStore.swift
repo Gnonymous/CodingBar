@@ -5,10 +5,18 @@ import CodingBarCore
 // Runs Aggregator.run() off the main actor and publishes on main.
 @MainActor
 final class UsageStore: ObservableObject {
-    private enum Keys { static let metric = "menuMetric"; static let range = "selectedRange"; static let quotaSource = "menuQuotaSource" }
+    private enum Keys { static let metric = "menuMetric"; static let range = "selectedRange"; static let quotaSource = "menuQuotaSource"; static let language = "language" }
     private static let defaults = UserDefaults.standard
 
     @Published var snapshot: Snapshot = .sample()
+    /// UI language (default English). Changing it re-localizes everything: re-aggregate
+    /// (coach/forecast strings) and force-refresh quota (error notes) in the new language.
+    @Published var language: AppLanguage {
+        didSet {
+            Self.defaults.set(language.rawValue, forKey: Keys.language)
+            refresh(); refreshQuota(force: true)
+        }
+    }
     // Preferences persist across launches (they used to reset to defaults every start).
     @Published var menuMetric: MenuMetric { didSet { Self.defaults.set(menuMetric.rawValue, forKey: Keys.metric) } }
     /// Range for the overview hero (成果/代价/效率/趋势-delta). Menu bar stays today.
@@ -24,6 +32,7 @@ final class UsageStore: ObservableObject {
         menuMetric = MenuMetric(rawValue: d.string(forKey: Keys.metric) ?? "") ?? .tokens
         selectedRange = Range(rawValue: d.string(forKey: Keys.range) ?? "") ?? .today
         menuQuotaSource = Provider(rawValue: d.string(forKey: Keys.quotaSource) ?? "") ?? .claude
+        language = AppLanguage(rawValue: d.string(forKey: Keys.language) ?? "") ?? .en
     }
 
     /// Recompute the menu-bar quota percentage from the last-fetched windows using the
@@ -90,8 +99,9 @@ final class UsageStore: ObservableObject {
         isRefreshing = true
         let q = quotaWindows
         let pref = menuQuotaSource
+        let lang = language
         Task.detached(priority: .userInitiated) {
-            let snap = Aggregator.run(quota: q, menuQuotaProvider: pref)
+            let snap = Aggregator.run(quota: q, menuQuotaProvider: pref, language: lang)
             await MainActor.run {
                 var merged = snap
                 self.applyQuota(to: &merged)   // never republish stale quota
@@ -105,15 +115,16 @@ final class UsageStore: ObservableObject {
     /// current snapshot in place — no local rescan needed. `force` bypasses the
     /// cache for the manual refresh button.
     func refreshQuota(force: Bool = false) {
+        let lang = language
         Task {
-            let result = await QuotaService.shared.current(force: force)
+            let result = await QuotaService.shared.current(force: force, language: lang)
             let nowD = Date()
             // Forecaster reads and rewrites quota-history.json; keep that disk I/O off
             // the main actor so a slow/large/corrupt history file can't jank the UI.
             let windows = result.windows
             let forecast = await Task.detached(priority: .utility) { () -> [String: String] in
-                _ = Forecaster.recordAndForecast(quota: windows, now: nowD)
-                return Forecaster.forecastByProvider(quota: windows, now: nowD)
+                _ = Forecaster.recordAndForecast(quota: windows, now: nowD, language: lang)
+                return Forecaster.forecastByProvider(quota: windows, now: nowD, language: lang)
             }.value
             self.quotaWindows = result.windows
             self.quotaNotes = result.notes

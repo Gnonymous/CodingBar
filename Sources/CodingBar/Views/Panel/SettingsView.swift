@@ -17,6 +17,10 @@ struct SettingsView: View {
 
     private enum UpdateState: Equatable { case idle, checking, done(UpdateChecker.Result) }
 
+    // This view owns `store`, so it reads the language directly (it can't read an
+    // environment value it sets on itself); descendants still read \.lang.
+    private var lang: AppLanguage { store.language }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -25,9 +29,9 @@ struct SettingsView: View {
                 divider
                 // Metric (花费/Token) is toggled by the header's $ button, so it's not
                 // duplicated here — it still persists via that toggle.
-                segRow("菜单栏额度", [(Provider.claude, "Claude"), (Provider.codex, "Codex")], $store.menuQuotaSource)
+                segRow(lang.t("Menu bar quota", "菜单栏额度"), [(Provider.claude, "Claude"), (Provider.codex, "Codex")], $store.menuQuotaSource)
                 divider
-                languageRow
+                segRow(lang.t("Language", "界面语言"), [(AppLanguage.en, "English"), (AppLanguage.zh, "中文")], $store.language)
                 divider
                 updateRow
             }
@@ -43,13 +47,13 @@ struct SettingsView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("设置").font(.system(size: 13, weight: .semibold)).tracking(-0.13).foregroundStyle(dc.fg)
+            Text(lang.t("Settings", "设置")).font(.system(size: 13, weight: .semibold)).tracking(-0.13).foregroundStyle(dc.fg)
             Spacer()
             Button(action: onClose) {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .regular)).foregroundStyle(dc.fg3)
                     .padding(.horizontal, 3).padding(.vertical, 1).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).focusEffectDisabled().help("关闭设置")
+            .buttonStyle(.plain).focusEffectDisabled().help(lang.t("Close settings", "关闭设置"))
         }
         .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
         .overlay(Rectangle().fill(dc.sep).frame(height: 1), alignment: .bottom)
@@ -71,7 +75,7 @@ struct SettingsView: View {
     // MARK: Rows
 
     private var toggleRow: some View {
-        row(label: "开机自启动", caption: launchUnavailable ? "打包为 App 后可用" : nil) {
+        row(label: lang.t("Launch at login", "开机自启动"), caption: launchUnavailable ? lang.t("Available in the packaged app", "打包为 App 后可用") : nil) {
             Toggle("", isOn: $launchAtLogin)
                 .labelsHidden().toggleStyle(.switch).tint(dc.accent)
                 .disabled(launchUnavailable)
@@ -79,29 +83,19 @@ struct SettingsView: View {
         }
     }
 
-    private var languageRow: some View {
-        // Placeholder: the data layer still emits Chinese strings, so a real language
-        // switch waits for the i18n batch. Surfaced here so the slot exists.
-        row(label: "界面语言", caption: "跟随系统 · 多语言即将支持") {
-            Text("中文").font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg3)
-                .padding(.horizontal, 9).padding(.vertical, 3)
-                .background(RoundedRectangle(cornerRadius: 6).fill(dc.segbg))
-        }
-    }
-
     private var updateRow: some View {
-        row(label: "检查更新", caption: nil) {
+        row(label: lang.t("Check for updates", "检查更新"), caption: nil) {
             switch updateState {
             case .idle:
-                actionLink("检查", color: dc.accent) { runUpdateCheck() }
+                actionLink(lang.t("Check", "检查"), color: dc.accent) { runUpdateCheck() }
             case .checking:
                 ProgressView().controlSize(.small).scaleEffect(0.85).frame(height: 18)
             case .done(.upToDate(let v)):
-                Text("已是最新 v\(v)").font(.system(size: 10.5)).foregroundStyle(dc.fg3)
+                Text(lang.t("Up to date · v\(v)", "已是最新 v\(v)")).font(.system(size: 10.5)).foregroundStyle(dc.fg3)
             case .done(.updateAvailable(let v)):
-                actionLink("有新版本 v\(v) →", color: dc.accent) { NSWorkspace.shared.open(UpdateChecker.releasesPageURL) }
+                actionLink(lang.t("New version v\(v) →", "有新版本 v\(v) →"), color: dc.accent) { NSWorkspace.shared.open(UpdateChecker.releasesPageURL) }
             case .done(.failed):
-                actionLink("检查失败 · 重试", color: dc.warn) { runUpdateCheck() }
+                actionLink(lang.t("Check failed · retry", "检查失败 · 重试"), color: dc.warn) { runUpdateCheck() }
             }
         }
     }
@@ -157,7 +151,7 @@ struct SettingsView: View {
 
     private var versionLabel: String {
         let v = UpdateChecker.currentVersion
-        return v == "dev" ? "开发版" : "v\(v)"
+        return v == "dev" ? lang.t("Dev build", "开发版") : "v\(v)"
     }
 
     private func runUpdateCheck() {

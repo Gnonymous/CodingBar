@@ -51,8 +51,8 @@ public extension Snapshot {
                 QuotaWindow(provider: .codex, label: "7d", remaining: 0.26, resetAt: now.addingTimeInterval(86_400)),
             ],
             coach: [
-                Insight(kind: .tip, text: "8 个简单任务用了 Opus。换 Haiku 同样能完成，今天可省 ~$0.9。", savingUSD: 0.9),
-                Insight(kind: .forecast, text: "周额度预计 周四 15:00 见底"),
+                Insight(kind: .tip, text: "8 simple tasks ran on Opus. Haiku could handle them — save ~$0.9 today.", savingUSD: 0.9),
+                Insight(kind: .forecast, text: "Weekly quota runs out Thu 15:00"),
             ],
             fuel: FuelGauge(sessionName: "coding-bar", usedTokens: 142_000, maxTokens: 200_000, estRemainingTurns: 28),
             liveSessions: [
@@ -62,8 +62,8 @@ public extension Snapshot {
             ],
             burnPerMin: 1.92,
             quotaForecast: [
-                "claude": "Claude 周额度预计 周三 15:12 见底",
-                "codex": "Codex 周额度预计 明日 08:30 见底",
+                "claude": "Claude weekly quota runs out Wed 15:12",
+                "codex": "Codex weekly quota runs out tomorrow 08:30",
             ],
             quotaFetchedAt: now.addingTimeInterval(-46)
         )

@@ -83,7 +83,7 @@ public enum Forecaster {
         return history
     }
 
-    public static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
+    public static func recordAndForecast(quota: [QuotaWindow], now: Date, language: AppLanguage = .en) -> Insight? {
         let history = appendAndPrune(quota: quota, now: now)
 
         // Forecast for Codex weekly window ("7d")
@@ -93,14 +93,15 @@ public enum Forecaster {
 
         guard let tZero = regressZero(weekSamples),
               tZero > now.timeIntervalSince1970 else { return nil }
-        let text = "周额度预计 " + formatDepletion(Date(timeIntervalSince1970: tZero)) + " 见底"
+        let when = formatDepletion(Date(timeIntervalSince1970: tZero), language: language)
+        let text = language.t("Weekly quota runs out \(when)", "周额度预计 \(when) 见底")
         return Insight(kind: .forecast, text: text)
     }
 
     /// For each provider that has a weekly window, forecast when it depletes.
     /// Returns `[Provider.rawValue: "<Name> 周额度预计 <weekday> <time> 见底"]`.
     /// Reads the history persisted by `recordAndForecast`, so call that first.
-    public static func forecastByProvider(quota: [QuotaWindow], now: Date) -> [String: String] {
+    public static func forecastByProvider(quota: [QuotaWindow], now: Date, language: AppLanguage = .en) -> [String: String] {
         let history = loadHistoryLocked()
         var out: [String: String] = [:]
         for provider in [Provider.claude, Provider.codex] {
@@ -110,7 +111,8 @@ public enum Forecaster {
                 .sorted { $0.date < $1.date }
             guard let tZero = regressZero(samples), tZero > now.timeIntervalSince1970 else { continue }
             let name = provider == .claude ? "Claude" : "Codex"
-            out[provider.rawValue] = "\(name) 周额度预计 " + formatDepletion(Date(timeIntervalSince1970: tZero)) + " 见底"
+            let when = formatDepletion(Date(timeIntervalSince1970: tZero), language: language)
+            out[provider.rawValue] = language.t("\(name) weekly quota runs out \(when)", "\(name) 周额度预计 \(when) 见底")
         }
         return out
     }
@@ -133,11 +135,12 @@ public enum Forecaster {
         return -a / b
     }
 
-    /// "周四 15:00" — weekday + HH:mm of a predicted depletion date.
-    private static func formatDepletion(_ date: Date) -> String {
+    /// "Thu 15:00" / "周四 15:00" — weekday + HH:mm of a predicted depletion date.
+    private static func formatDepletion(_ date: Date, language: AppLanguage) -> String {
         let cal = Calendar.current
-        let weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-        let wd = weekdayNames[cal.component(.weekday, from: date) - 1]
+        let names = language.t("Sun Mon Tue Wed Thu Fri Sat", "周日 周一 周二 周三 周四 周五 周六")
+            .split(separator: " ").map(String.init)
+        let wd = names[cal.component(.weekday, from: date) - 1]
         let h = cal.component(.hour, from: date), m = cal.component(.minute, from: date)
         return wd + " " + String(format: "%02d:%02d", h, m)
     }

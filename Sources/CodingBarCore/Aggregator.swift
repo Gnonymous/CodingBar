@@ -6,7 +6,8 @@ public enum Aggregator {
     /// APIs). It is a parameter rather than scanned here so the local-log
     /// aggregation stays synchronous and offline; the UI injects the latest
     /// network-fetched quota each run. All three overview ranges are precomputed.
-    public static func run(now: Date = Date(), quota: [QuotaWindow] = [], menuQuotaProvider: Provider? = nil) -> Snapshot {
+    public static func run(now: Date = Date(), quota: [QuotaWindow] = [], menuQuotaProvider: Provider? = nil,
+                           language: AppLanguage = .en) -> Snapshot {
         let cal = Calendar.current
 
         // token/cost/behavior aggregation is 100% local
@@ -181,11 +182,11 @@ public enum Aggregator {
             claudeRecords: claudeRecords, codexRecords: codexRecords, now: now)
 
         // Pillar ④ — Forecast (records history, returns coach insight)
-        let forecastInsight = Forecaster.recordAndForecast(quota: quota, now: now)
-        let quotaForecast = Forecaster.forecastByProvider(quota: quota, now: now)
+        let forecastInsight = Forecaster.recordAndForecast(quota: quota, now: now, language: language)
+        let quotaForecast = Forecaster.forecastByProvider(quota: quota, now: now, language: language)
 
         // Pillar ④b — Coach tips
-        var coach: [Insight] = Coach.build(from: todayRecords)
+        var coach: [Insight] = Coach.build(from: todayRecords, language: language)
         if let fi = forecastInsight { coach.append(fi) }
 
         let menu = MenuSummary(

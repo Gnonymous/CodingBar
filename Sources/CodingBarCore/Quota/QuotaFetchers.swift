@@ -60,19 +60,19 @@ public struct ClaudeQuotaFetcher: Sendable {
         self.credentialsURL = credentialsURL
     }
 
-    public func fetch(now: Date = Date()) async -> QuotaFetchResult {
-        let credential = readCredential(now: now)
+    public func fetch(now: Date = Date(), language: AppLanguage = .en) async -> QuotaFetchResult {
+        let credential = readCredential(now: now, language: language)
         guard let token = credential.token else {
             // No token at all → quota silently unavailable (no popup, no note clutter
             // unless the credential was explicitly broken).
             return QuotaFetchResult(note: credential.status == .parseError ? credential.message : nil)
         }
         if credential.status == .expired {
-            return QuotaFetchResult(note: credential.message ?? "Claude Code 需要重新登录", authFailed: true)
+            return QuotaFetchResult(note: credential.message ?? language.t("Claude Code needs re-login", "Claude Code 需要重新登录"), authFailed: true)
         }
 
         guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else {
-            return QuotaFetchResult(note: "Claude 用量接口地址无效")
+            return QuotaFetchResult(note: language.t("Claude usage endpoint URL invalid", "Claude 用量接口地址无效"))
         }
         let headers = [
             "Authorization": "Bearer \(token)",
@@ -80,20 +80,22 @@ public struct ClaudeQuotaFetcher: Sendable {
             "Accept": "application/json",
         ]
         guard let (status, body) = await QuotaHTTP.get(url, headers: headers) else {
-            return QuotaFetchResult(note: "Claude 用量读取失败")
+            return QuotaFetchResult(note: language.t("Claude usage fetch failed", "Claude 用量读取失败"))
         }
         if status == 401 || status == 403 {
-            return QuotaFetchResult(note: "Claude Code 需要重新登录", authFailed: true)
+            return QuotaFetchResult(note: language.t("Claude Code needs re-login", "Claude Code 需要重新登录"), authFailed: true)
         }
         guard (200..<300).contains(status) else {
-            return QuotaFetchResult(note: "Claude 用量接口错误 HTTP \(status)")
+            return QuotaFetchResult(note: language.t("Claude usage error: HTTP \(status)", "Claude 用量接口错误 HTTP \(status)"))
         }
         let windows = Self.parse(body)
         if windows.isEmpty {
             // HTTP was 2xx but no known windows parsed. A non-empty body yielding
             // nothing usually means the (private) endpoint's response shape changed —
             // distinct from a genuine "no quota" state, so it must not look like "0 used".
-            return QuotaFetchResult(note: body.isEmpty ? "Claude 暂无额度数据" : "Claude 额度数据异常（接口字段可能已变更）")
+            return QuotaFetchResult(note: body.isEmpty
+                ? language.t("No Claude quota data yet", "Claude 暂无额度数据")
+                : language.t("Claude quota data malformed (API fields may have changed)", "Claude 额度数据异常（接口字段可能已变更）"))
         }
         return QuotaFetchResult(windows: windows)
     }
@@ -114,16 +116,16 @@ public struct ClaudeQuotaFetcher: Sendable {
         }
     }
 
-    private func readCredential(now: Date) -> UsageCredential {
+    private func readCredential(now: Date, language: AppLanguage) -> UsageCredential {
         // Preferred: Apple-signed `security` CLI reads the keychain item silently.
         if let data = reader.genericPassword(service: Self.service) {
-            let c = CredentialParser.parseClaudeCredentials(data: data, now: now)
+            let c = CredentialParser.parseClaudeCredentials(data: data, now: now, language: language)
             if c.token != nil { return c }
         }
         // Fallback: plaintext credentials file (uncommon on macOS).
         if FileManager.default.fileExists(atPath: credentialsURL.path),
            let data = try? Data(contentsOf: credentialsURL) {
-            let c = CredentialParser.parseClaudeCredentials(data: data, now: now)
+            let c = CredentialParser.parseClaudeCredentials(data: data, now: now, language: language)
             if c.token != nil { return c }
         }
         // Deliberately no direct SecItemCopyMatching here: it would re-trigger the
@@ -146,17 +148,17 @@ public struct CodexQuotaFetcher: Sendable {
         self.authURL = authURL
     }
 
-    public func fetch(now: Date = Date()) async -> QuotaFetchResult {
-        let credential = readCredential(now: now)
+    public func fetch(now: Date = Date(), language: AppLanguage = .en) async -> QuotaFetchResult {
+        let credential = readCredential(now: now, language: language)
         guard let token = credential.token else {
             return QuotaFetchResult(note: credential.status == .parseError ? credential.message : nil)
         }
         if credential.status == .expired {
-            return QuotaFetchResult(note: credential.message ?? "Codex 需要重新登录", authFailed: true)
+            return QuotaFetchResult(note: credential.message ?? language.t("Codex needs re-login", "Codex 需要重新登录"), authFailed: true)
         }
 
         guard let url = URL(string: "https://chatgpt.com/backend-api/wham/usage") else {
-            return QuotaFetchResult(note: "Codex 用量接口地址无效")
+            return QuotaFetchResult(note: language.t("Codex usage endpoint URL invalid", "Codex 用量接口地址无效"))
         }
         var headers = [
             "Authorization": "Bearer \(token)",
@@ -167,17 +169,19 @@ public struct CodexQuotaFetcher: Sendable {
             headers["ChatGPT-Account-Id"] = accountID
         }
         guard let (status, body) = await QuotaHTTP.get(url, headers: headers) else {
-            return QuotaFetchResult(note: "Codex 用量读取失败")
+            return QuotaFetchResult(note: language.t("Codex usage fetch failed", "Codex 用量读取失败"))
         }
         if status == 401 || status == 403 {
-            return QuotaFetchResult(note: "Codex 需要重新登录", authFailed: true)
+            return QuotaFetchResult(note: language.t("Codex needs re-login", "Codex 需要重新登录"), authFailed: true)
         }
         guard (200..<300).contains(status) else {
-            return QuotaFetchResult(note: "Codex 用量接口错误 HTTP \(status)")
+            return QuotaFetchResult(note: language.t("Codex usage error: HTTP \(status)", "Codex 用量接口错误 HTTP \(status)"))
         }
         let windows = Self.parse(body)
         if windows.isEmpty {
-            return QuotaFetchResult(note: body.isEmpty ? "Codex 暂无额度数据" : "Codex 额度数据异常（接口字段可能已变更）")
+            return QuotaFetchResult(note: body.isEmpty
+                ? language.t("No Codex quota data yet", "Codex 暂无额度数据")
+                : language.t("Codex quota data malformed (API fields may have changed)", "Codex 额度数据异常（接口字段可能已变更）"))
         }
         return QuotaFetchResult(windows: windows)
     }
@@ -204,16 +208,16 @@ public struct CodexQuotaFetcher: Sendable {
         }
     }
 
-    private func readCredential(now: Date) -> UsageCredential {
+    private func readCredential(now: Date, language: AppLanguage) -> UsageCredential {
         // File is the macOS default for Codex; try it first (no keychain at all).
         if FileManager.default.fileExists(atPath: authURL.path),
            let data = try? Data(contentsOf: authURL) {
-            let c = CredentialParser.parseCodexCredentials(data: data, now: now)
+            let c = CredentialParser.parseCodexCredentials(data: data, now: now, language: language)
             if c.token != nil { return c }
         }
         // Fallback: keychain item via the Apple-signed `security` CLI (silent).
         if let data = reader.genericPassword(service: Self.service) {
-            let c = CredentialParser.parseCodexCredentials(data: data, now: now)
+            let c = CredentialParser.parseCodexCredentials(data: data, now: now, language: language)
             if c.token != nil { return c }
         }
         return UsageCredential(token: nil, status: .notFound)

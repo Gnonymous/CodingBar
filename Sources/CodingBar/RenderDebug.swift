@@ -27,9 +27,10 @@ enum RenderDebug {
 
     @MainActor
     static func renderPanel(to path: String, tab: Int, dark: Bool = true, scenario: String = "healthy",
-                            metric: MenuMetric = .cost) {
+                            metric: MenuMetric = .cost, language: AppLanguage = .en) {
         let store = UsageStore()
-        store.snapshot = Self.scenarioSnapshot(scenario)
+        store.language = language
+        store.snapshot = Self.scenarioSnapshot(scenario, language: language)
         store.menuMetric = metric
         let view = PanelView(store: store, initialTab: tab, scrollable: false)
             .environment(\.colorScheme, dark ? .dark : .light)
@@ -37,9 +38,10 @@ enum RenderDebug {
     }
 
     @MainActor
-    static func renderSettings(to path: String, dark: Bool = true) {
+    static func renderSettings(to path: String, dark: Bool = true, language: AppLanguage = .en) {
         let store = UsageStore()
-        store.snapshot = Self.scenarioSnapshot("healthy")
+        store.language = language
+        store.snapshot = Self.scenarioSnapshot("healthy", language: language)
         let view = PanelView(store: store, scrollable: false, initialSettings: true)
             .environment(\.colorScheme, dark ? .dark : .light)
         write(view, to: path, scale: 2)
@@ -48,7 +50,7 @@ enum RenderDebug {
     /// Mutate the sample snapshot into the prototype's named scenarios so every
     /// state (healthy / degraded / nosession / empty) can be rendered for review.
     @MainActor
-    private static func scenarioSnapshot(_ name: String) -> Snapshot {
+    private static func scenarioSnapshot(_ name: String, language: AppLanguage = .en) -> Snapshot {
         var s = Snapshot.sample()
         // Per-provider freshness (recent successes by default). Keep the global badge
         // equal to the oldest provider, matching the runtime `global = min(...)` rule.
@@ -62,14 +64,14 @@ enum RenderDebug {
             s.liveSessions = []; s.burnPerMin = 0
         case "degraded":
             s.quota = s.quota.filter { $0.provider == .codex }
-            s.quotaNotes = ["Claude 用量接口错误 HTTP 429 · 需重新登录"]
+            s.quotaNotes = [language.t("Claude usage API error HTTP 429 · re-login needed", "Claude 用量接口错误 HTTP 429 · 需重新登录")]
             s.quotaForecast = s.quotaForecast.filter { $0.key == "codex" }
             // Codex is on a stale last-good reading (kept through a failure streak).
             s.quotaFetchedByProvider = [Provider.codex.rawValue: s.generatedAt.addingTimeInterval(-8 * 60)]
             s.quotaFetchedAt = s.generatedAt.addingTimeInterval(-8 * 60)
         case "empty":
             s.liveSessions = []; s.burnPerMin = 0
-            s.coach = [Insight(kind: .tip, text: "欢迎使用 CodingBar！继续编码，这里会逐渐显示你的花费、效率与省钱建议。")]
+            s.coach = [Insight(kind: .tip, text: language.t("Welcome to CodingBar! Keep coding — your spend, efficiency, and savings tips will appear here.", "欢迎使用 CodingBar！继续编码，这里会逐渐显示你的花费、效率与省钱建议。"))]
         default:
             break
         }

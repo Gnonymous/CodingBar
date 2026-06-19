@@ -82,37 +82,37 @@ public struct SecurityCommandReader: Sendable {
 public enum CredentialParser {
 
     /// Parse the Claude Code keychain JSON (`claudeAiOauth.accessToken` + `expiresAt`).
-    public static func parseClaudeCredentials(data: Data, now: Date = Date()) -> UsageCredential {
+    public static func parseClaudeCredentials(data: Data, now: Date = Date(), language: AppLanguage = .en) -> UsageCredential {
         guard let object = try? JSONSerialization.jsonObject(with: data),
               let root = object as? [String: Any] else {
-            return UsageCredential(token: nil, status: .parseError, message: "Claude 凭证 JSON 解析失败")
+            return UsageCredential(token: nil, status: .parseError, message: language.t("Claude credential: invalid JSON", "Claude 凭证 JSON 解析失败"))
         }
         guard let entry = (root["claudeAiOauth"] ?? root["claude.ai_oauth"]) as? [String: Any] else {
-            return UsageCredential(token: nil, status: .parseError, message: "Claude 凭证缺少 OAuth 字段")
+            return UsageCredential(token: nil, status: .parseError, message: language.t("Claude credential: missing OAuth field", "Claude 凭证缺少 OAuth 字段"))
         }
         guard let token = entry["accessToken"] as? String, !token.isEmpty else {
-            return UsageCredential(token: nil, status: .parseError, message: "Claude accessToken 缺失")
+            return UsageCredential(token: nil, status: .parseError, message: language.t("Claude credential: missing accessToken", "Claude accessToken 缺失"))
         }
         if let expiresAt = entry["expiresAt"], isExpired(expiresAt, now: now) {
-            return UsageCredential(token: token, status: .expired, message: "Claude Code 需要重新登录")
+            return UsageCredential(token: token, status: .expired, message: language.t("Claude Code needs re-login", "Claude Code 需要重新登录"))
         }
         return UsageCredential(token: token, status: .valid)
     }
 
     /// Parse the Codex `auth.json` (`auth_mode == chatgpt`, `tokens.access_token`,
     /// `tokens.account_id`, `last_refresh`).
-    public static func parseCodexCredentials(data: Data, now: Date = Date()) -> UsageCredential {
+    public static func parseCodexCredentials(data: Data, now: Date = Date(), language: AppLanguage = .en) -> UsageCredential {
         guard let auth = try? JSONDecoder().decode(CodexAuthFile.self, from: data) else {
-            return UsageCredential(token: nil, status: .parseError, message: "Codex 凭证解析失败")
+            return UsageCredential(token: nil, status: .parseError, message: language.t("Codex credential: parse failed", "Codex 凭证解析失败"))
         }
         guard auth.authMode == "chatgpt" else {
-            return UsageCredential(token: nil, status: .notFound, message: "Codex 未使用 OAuth 登录")
+            return UsageCredential(token: nil, status: .notFound, message: language.t("Codex not signed in with OAuth", "Codex 未使用 OAuth 登录"))
         }
         guard let token = auth.tokens?.accessToken, !token.isEmpty else {
-            return UsageCredential(token: nil, status: .parseError, message: "Codex access_token 缺失")
+            return UsageCredential(token: nil, status: .parseError, message: language.t("Codex credential: missing access_token", "Codex access_token 缺失"))
         }
         if let lastRefresh = auth.lastRefresh, isStaleCodexRefresh(lastRefresh, now: now) {
-            return UsageCredential(token: token, accountID: auth.tokens?.accountID, status: .expired, message: "Codex 凭证可能已过期")
+            return UsageCredential(token: token, accountID: auth.tokens?.accountID, status: .expired, message: language.t("Codex credential may have expired", "Codex 凭证可能已过期"))
         }
         return UsageCredential(token: token, accountID: auth.tokens?.accountID, status: .valid)
     }

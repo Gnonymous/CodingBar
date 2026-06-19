@@ -64,11 +64,12 @@ struct DCRatioBar: View {
 
 struct DCToolMix: View {
     @Environment(\.dc) private var dc
+    @Environment(\.lang) private var lang
     let mix: ToolMix
     private var defs: [(String, Int, Color)] {
-        [("写", mix.write, Color(hex: "#5b8def")), ("读", mix.read, Color(hex: "#57b894")),
-         ("执行", mix.run, Color(hex: "#e0a04d")), ("搜索", mix.search, Color(hex: "#b07cc6")),
-         ("其他", mix.other, Color(hex: "#8a9099"))].filter { $0.1 > 0 }
+        [(lang.t("Write", "写"), mix.write, Color(hex: "#5b8def")), (lang.t("Read", "读"), mix.read, Color(hex: "#57b894")),
+         (lang.t("Run", "执行"), mix.run, Color(hex: "#e0a04d")), (lang.t("Search", "搜索"), mix.search, Color(hex: "#b07cc6")),
+         (lang.t("Other", "其他"), mix.other, Color(hex: "#8a9099"))].filter { $0.1 > 0 }
     }
     private var total: Double { Double(max(1, defs.map { $0.1 }.reduce(0, +))) }
     var body: some View {
@@ -98,10 +99,14 @@ struct DCToolMix: View {
 
 struct DCHeatGrid: View {
     @Environment(\.dc) private var dc
+    @Environment(\.lang) private var lang
     @Environment(\.colorScheme) private var scheme
     let cells: [[Double]]
 
-    private let weekdays = ["一", "二", "三", "四", "五", "六", "日"]   // rows = Mon…Sun
+    // rows = Mon…Sun. English uses single letters (M T W T F S S) to fit the 14pt gutter.
+    private var weekdays: [String] {
+        lang.t("M T W T F S S", "一 二 三 四 五 六 日").split(separator: " ").map(String.init)
+    }
     private let labelW: CGFloat = 14
 
     // GitHub contribution palette (5 levels), appearance-aware.
