@@ -106,18 +106,6 @@ make package    # 产出 dist/CodingBar.app
 
 因为分层解耦，`swift run CodingBar --dump-json` 可不开 GUI 用真实日志验证数据，`--render-menubar` / `--render-panel` 能把 UI 离屏渲染成 PNG。完整地图见 [`CLAUDE.md`](CLAUDE.md)。
 
-## 路线
-
-v1 已交付上述全部。接下来：
-
-- 打通范围切换器（总览为「今日」；模型 / 项目 / 缓存为「全部」，已如实标注）。
-- 画一个正式 app 图标（菜单栏目前用占位脉冲 glyph）。
-- 自动更新（Sparkle）与公证构建。
-
-## 贡献
-
-欢迎 Issue 和 PR。动手前请先看 [`CLAUDE.md`](CLAUDE.md)——里面写了架构、`Models.swift` 冻结契约、注释哲学，还有凭证 / 隐私方面的雷区。CI 在每次 push 时保持 `swift build` 与 `swift test` 绿灯。
-
 ## License
 
 [Apache License 2.0](LICENSE)。如果你 fork CodingBar 做自己的产品，换个名字、注明出处就好。参考项目（KeyStats / Tokei / CodexBar）仅作本地研究，不随仓库分发。
