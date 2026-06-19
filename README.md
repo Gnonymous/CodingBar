@@ -15,16 +15,6 @@
   <img src="docs/assets/social.png" width="840" alt="CodingBar — a menu-bar dashboard for your Claude Code & Codex usage" />
 </p>
 
-<p align="center">
-  <img src="docs/assets/menubar.png" width="760" alt="CodingBar menu bar — quota states" />
-</p>
-
-<p align="center">
-  <img src="docs/assets/panel-overview.png" width="320" alt="CodingBar panel — Overview" />
-</p>
-
-<p align="center"><sub><em>Screenshots rendered from sample data via <code>--render-panel</code>.</em></sub></p>
-
 <details>
 <summary><strong>More views — Composition · Insights · Light mode</strong></summary>
 <br/>
@@ -115,18 +105,6 @@ Pure SwiftPM, two targets, data layer fully decoupled from UI:
 - **`CodingBar`** — the AppKit `NSStatusItem` + SwiftUI app: `UsageStore` (`@MainActor ObservableObject`), `RefreshLoop`, `StatusItemController`, `MenuBarItemView`, and the three-tab panel.
 
 Because the layers are decoupled, `swift run CodingBar --dump-json` verifies data against real logs with no GUI, and `--render-menubar` / `--render-panel` rasterize the UI to PNG offscreen. See [`CLAUDE.md`](CLAUDE.md) for the full map.
-
-## Roadmap
-
-v1 ships everything above. Up next:
-
-- Wire the range switcher through (Overview is "today"; model / project / cache are "all-time", labeled as such).
-- A proper app icon (the menu bar currently uses a placeholder pulse glyph).
-- Auto-update (Sparkle) and notarized builds.
-
-## Contributing
-
-Issues and PRs welcome. Please read [`CLAUDE.md`](CLAUDE.md) first — it covers the architecture, the frozen `Models.swift` contract, comment philosophy, and credential / privacy landmines. CI keeps `swift build` and `swift test` green on every push.
 
 ## License
 
