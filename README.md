@@ -13,6 +13,7 @@
 </div>
 
 <p align="center">
+  <br/>
   <img src="docs/assets/social.png" width="100%" alt="CodingBar — a menu-bar dashboard for your Claude Code & Codex usage" />
 </p>
 
