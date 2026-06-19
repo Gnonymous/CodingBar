@@ -5,10 +5,32 @@ import CodingBarCore
 // Runs Aggregator.run() off the main actor and publishes on main.
 @MainActor
 final class UsageStore: ObservableObject {
+    private enum Keys { static let metric = "menuMetric"; static let range = "selectedRange"; static let quotaSource = "menuQuotaSource" }
+    private static let defaults = UserDefaults.standard
+
     @Published var snapshot: Snapshot = .sample()
-    @Published var menuMetric: MenuMetric = .tokens
+    // Preferences persist across launches (they used to reset to defaults every start).
+    @Published var menuMetric: MenuMetric { didSet { Self.defaults.set(menuMetric.rawValue, forKey: Keys.metric) } }
     /// Range for the overview hero (成果/代价/效率/趋势-delta). Menu bar stays today.
-    @Published var selectedRange: Range = .today
+    @Published var selectedRange: Range { didSet { Self.defaults.set(selectedRange.rawValue, forKey: Keys.range) } }
+    /// Which provider's quota the menu-bar icon reflects (falls back gracefully when
+    /// that provider has no window). Re-applied to the live snapshot on change.
+    @Published var menuQuotaSource: Provider {
+        didSet { Self.defaults.set(menuQuotaSource.rawValue, forKey: Keys.quotaSource); applyMenuQuota() }
+    }
+
+    init() {
+        let d = Self.defaults
+        menuMetric = MenuMetric(rawValue: d.string(forKey: Keys.metric) ?? "") ?? .tokens
+        selectedRange = Range(rawValue: d.string(forKey: Keys.range) ?? "") ?? .today
+        menuQuotaSource = Provider(rawValue: d.string(forKey: Keys.quotaSource) ?? "") ?? .claude
+    }
+
+    /// Recompute the menu-bar quota percentage from the last-fetched windows using the
+    /// current provider preference — no network, just re-selects the surfaced window.
+    private func applyMenuQuota() {
+        snapshot.menu.quotaPercent = quotaWindows.menuWindow(preferring: menuQuotaSource)?.remaining
+    }
 
     // Last-known online quota (Claude + Codex usage APIs). Refreshed on its own
     // 5-min cadence and carried into every local refresh so the snapshot stays
@@ -50,8 +72,9 @@ final class UsageStore: ObservableObject {
         isRefreshing = true
         let q = quotaWindows
         let notes = quotaNotes
+        let pref = menuQuotaSource
         Task.detached(priority: .userInitiated) {
-            var snap = Aggregator.run(quota: q)
+            var snap = Aggregator.run(quota: q, menuQuotaProvider: pref)
             snap.quotaNotes = notes
             await MainActor.run { [snap] in
                 self.snapshot = snap
@@ -81,7 +104,7 @@ final class UsageStore: ObservableObject {
             snap.quotaNotes = result.notes
             snap.quotaForecast = forecast
             snap.quotaFetchedAt = result.windows.isEmpty ? nil : nowD
-            snap.menu.quotaPercent = result.windows.menuWindow?.remaining
+            snap.menu.quotaPercent = result.windows.menuWindow(preferring: self.menuQuotaSource)?.remaining
             self.snapshot = snap
         }
     }

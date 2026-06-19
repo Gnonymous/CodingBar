@@ -77,6 +77,42 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(back.menu.primaryText, "1.2M")
     }
 
+    /// Codex `token_count` events are cumulative snapshots; replayed/duplicate events
+    /// used to inflate the summed total. The scanner now takes the positive delta of
+    /// `total_token_usage`, which de-duplicates and reconstructs each turn's increment.
+    /// Also guards that an unparseable timestamp drops the record (no `Date()` fallback)
+    /// while still advancing the cumulative baseline.
+    func testCodexScannerDeduplicatesCumulativeTokenCounts() throws {
+        func line(_ obj: [String: Any]) -> String {
+            String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+        }
+        func tc(ts: String, input: Int, cached: Int, output: Int) -> [String: Any] {
+            ["type": "event_msg", "timestamp": ts,
+             "payload": ["type": "token_count",
+                         "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": cached,
+                                                        "output_tokens": output, "reasoning_output_tokens": 0]]]]
+        }
+        let lines = [
+            line(["type": "session_meta", "payload": ["cwd": "/tmp/proj"]]),
+            line(["type": "turn_context", "payload": ["model": "gpt-5.5-codex"]]),
+            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, cached: 0,  output: 10)), // A
+            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, cached: 0,  output: 10)), // dup → skip
+            line(tc(ts: "2026-06-18T13:05:00.000Z", input: 300, cached: 50, output: 30)), // C: Δ net150 cache50 out20
+            line(tc(ts: "garbage",                  input: 450, cached: 50, output: 40)), // bad ts → drop, baseline→450
+            line(tc(ts: "2026-06-18T13:10:00.000Z", input: 600, cached: 50, output: 50)), // E: Δ net150 cache0 out10
+        ]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let records = CodexScanner.parseFile(url)
+        XCTAssertEqual(records.count, 3, "duplicate must be skipped and the bad-timestamp record dropped")
+        XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.input }, 100 + 150 + 150)     // net input
+        XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.cacheRead }, 0 + 50 + 0)
+        XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.output }, 10 + 20 + 10)
+        XCTAssertEqual(records.first?.model, "gpt-5.5-codex")
+    }
+
     func testTokenBreakdownMath() {
         var a = TokenBreakdown(input: 10, output: 5, cacheRead: 100)
         a += TokenBreakdown(input: 5, cacheWrite: 20)

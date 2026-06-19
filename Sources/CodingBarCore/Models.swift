@@ -86,6 +86,17 @@ public extension Array where Element == QuotaWindow {
             ?? first { $0.provider == .codex && $0.label == "5h" }
             ?? self.min { $0.remaining < $1.remaining }
     }
+
+    /// Menu-bar window honoring the user's preferred provider: that provider's 5h
+    /// window, else its most-depleted window. Falls back to the default `menuWindow`
+    /// chain when the preferred provider has no data (so a Claude-only or Codex-only
+    /// user still sees something). `nil` preference → the default chain.
+    func menuWindow(preferring provider: Provider?) -> QuotaWindow? {
+        guard let provider else { return menuWindow }
+        let preferred = first { $0.provider == provider && $0.label == "5h" }
+            ?? filter { $0.provider == provider }.min { $0.remaining < $1.remaining }
+        return preferred ?? menuWindow
+    }
 }
 
 public struct CacheStat: Codable, Sendable {

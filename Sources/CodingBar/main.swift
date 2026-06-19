@@ -50,6 +50,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-appicon"), i + 1 < Com
     MainActor.assumeIsolated { AppIconRenderer.writeIconset(to: dir) }
     exit(0)
 }
+if let i = CommandLine.arguments.firstIndex(of: "--render-settings"), i + 1 < CommandLine.arguments.count {
+    _ = NSApplication.shared
+    let args = CommandLine.arguments
+    let path = args[i + 1]
+    let dark = (i + 2 < args.count) ? (args[i + 2].lowercased() != "light") : true
+    MainActor.assumeIsolated { RenderDebug.renderSettings(to: path, dark: dark) }
+    exit(0)
+}
 if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), i + 2 < CommandLine.arguments.count {
     _ = NSApplication.shared
     let args = CommandLine.arguments

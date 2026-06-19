@@ -6,7 +6,7 @@ public enum Aggregator {
     /// APIs). It is a parameter rather than scanned here so the local-log
     /// aggregation stays synchronous and offline; the UI injects the latest
     /// network-fetched quota each run. All three overview ranges are precomputed.
-    public static func run(now: Date = Date(), quota: [QuotaWindow] = []) -> Snapshot {
+    public static func run(now: Date = Date(), quota: [QuotaWindow] = [], menuQuotaProvider: Provider? = nil) -> Snapshot {
         let cal = Calendar.current
 
         // token/cost/behavior aggregation is 100% local
@@ -169,10 +169,10 @@ public enum Aggregator {
             primaryText = "\(totalTodayTokens)"
         }
 
-        // Menu bar shows one fixed window (Claude 5h preferred). quotaPercent is
-        // the *remaining* fraction (drives bar fill + color); the view renders it
-        // as "used %".
-        let quotaPercent: Double? = quota.menuWindow?.remaining
+        // Menu bar shows one window (the user's preferred provider, else Claude 5h).
+        // quotaPercent is the *remaining* fraction (drives bar fill + color); the view
+        // renders it as "used %".
+        let quotaPercent: Double? = quota.menuWindow(preferring: menuQuotaProvider)?.remaining
 
         // Pillar ③ — Habits (tool mix, rhythm, heatmap)
         let habits = Behavior.build(from: allRecords, todayStart: todayStart, now: now)

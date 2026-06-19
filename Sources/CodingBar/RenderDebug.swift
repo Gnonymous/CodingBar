@@ -36,6 +36,15 @@ enum RenderDebug {
         write(view, to: path, scale: 2)
     }
 
+    @MainActor
+    static func renderSettings(to path: String, dark: Bool = true) {
+        let store = UsageStore()
+        store.snapshot = Self.scenarioSnapshot("healthy")
+        let view = PanelView(store: store, scrollable: false, initialSettings: true)
+            .environment(\.colorScheme, dark ? .dark : .light)
+        write(view, to: path, scale: 2)
+    }
+
     /// Mutate the sample snapshot into the prototype's named scenarios so every
     /// state (healthy / degraded / nosession / empty) can be rendered for review.
     @MainActor

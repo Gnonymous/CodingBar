@@ -89,7 +89,13 @@ public struct ClaudeQuotaFetcher: Sendable {
             return QuotaFetchResult(note: "Claude 用量接口错误 HTTP \(status)")
         }
         let windows = Self.parse(body)
-        return QuotaFetchResult(windows: windows, note: windows.isEmpty ? "Claude 暂无额度数据" : nil)
+        if windows.isEmpty {
+            // HTTP was 2xx but no known windows parsed. A non-empty body yielding
+            // nothing usually means the (private) endpoint's response shape changed —
+            // distinct from a genuine "no quota" state, so it must not look like "0 used".
+            return QuotaFetchResult(note: body.isEmpty ? "Claude 暂无额度数据" : "Claude 额度数据异常（接口字段可能已变更）")
+        }
+        return QuotaFetchResult(windows: windows)
     }
 
     public static func parse(_ data: Data) -> [QuotaWindow] {
@@ -170,7 +176,10 @@ public struct CodexQuotaFetcher: Sendable {
             return QuotaFetchResult(note: "Codex 用量接口错误 HTTP \(status)")
         }
         let windows = Self.parse(body)
-        return QuotaFetchResult(windows: windows, note: windows.isEmpty ? "Codex 暂无额度数据" : nil)
+        if windows.isEmpty {
+            return QuotaFetchResult(note: body.isEmpty ? "Codex 暂无额度数据" : "Codex 额度数据异常（接口字段可能已变更）")
+        }
+        return QuotaFetchResult(windows: windows)
     }
 
     public static func parse(_ data: Data) -> [QuotaWindow] {

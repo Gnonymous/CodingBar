@@ -81,6 +81,8 @@ make package    # 产出 dist/CodingBar.app
 - **构成**（Composition）— 钱花在哪：按模型和按项目拆解花费。
 - **洞察**（Insights）— 代码产出、工具使用占比、黄金时段热力图、省钱提示、额度燃尽预测。
 
+> **数字是怎么算的。** *花费*是按 **API 现付价估算**（`pricing.json`），**不是你的订阅账单**——包月 Max / ChatGPT 用户应把它读作「等价 API 价值」，而非实际扣款。*代码产出*是**近似的 git 归因**：会话工作目录在时间窗内的全部非 merge 提交——无法区分手写与 AI 提交，且不含未提交改动。*Codex* 的 token 总量按每个会话的累计计数器（`total_token_usage`）做差分去重，不再把重复事件算两遍。
+
 ## 隐私
 
 - **用量 / 成本 / 行为 / git** — 100% 本地、离线。只读取 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`。价格表（`Sources/CodingBar/Resources/pricing.json`）用户可改。

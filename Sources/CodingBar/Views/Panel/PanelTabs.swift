@@ -297,7 +297,11 @@ struct OverviewTab: View {
                 }
                 .padding(.bottom, 9)
 
-                if !snap.quotaNotes.isEmpty { noteCard(snap.quotaNotes[0]).padding(.bottom, 10) }
+                // Render EVERY provider's degradation note (Claude + Codex can both
+                // fail at once); the old `quotaNotes[0]` silently swallowed the second.
+                ForEach(Array(snap.quotaNotes.enumerated()), id: \.offset) { _, note in
+                    noteCard(note).padding(.bottom, 10)
+                }
 
                 quotaGroup(.claude)
                 quotaGroup(.codex)
@@ -364,12 +368,12 @@ struct OverviewTab: View {
     }
 
     private func noteCard(_ note: String) -> some View {
+        // The note text carries the actionable guidance (e.g. "Claude 需要重新登录").
+        // The old "重新登录 →" affordance was a plain Text with no handler — a dead
+        // link — so it's removed rather than left looking tappable.
         HStack(alignment: .top, spacing: 7) {
             Text("⚠").font(.system(size: 12)).foregroundStyle(dc.warn)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(note).font(.system(size: 10.5)).foregroundStyle(dc.fg).fixedSize(horizontal: false, vertical: true)
-                Text("重新登录 →").font(.system(size: 10, weight: .semibold)).foregroundStyle(dc.accent)
-            }
+            Text(note).font(.system(size: 10.5)).foregroundStyle(dc.fg).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 9).padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)

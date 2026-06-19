@@ -81,6 +81,8 @@ Click the menu-bar item to open a three-tab panel:
 - **Composition** (构成) — where the money went: spend broken down by model and by project.
 - **Insights** (洞察) — code output, tool-use mix, golden-hours heatmap, savings tips, and a quota-depletion forecast.
 
+> **How the numbers are computed.** *Spend* is an **estimate at pay-as-you-go API prices** (`pricing.json`), **not your subscription bill** — on a Max / ChatGPT plan, read it as "equivalent API value," not money actually charged. *Code output* is **approximate git attribution**: all non-merge commits in a session's working directory within the time window — it can't tell hand-written from AI commits and excludes uncommitted work. *Codex* token totals are de-duplicated from each session's cumulative counter (`total_token_usage`), so they no longer double-count replayed events.
+
 ## Privacy
 
 - **Usage / cost / behavior / git** — 100% local and offline. Reads only `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`. The price table (`Sources/CodingBar/Resources/pricing.json`) is user-editable.

@@ -15,6 +15,27 @@ struct RawRecord {
     var hasInterrupt: Bool      // true if the raw line contained "[Request interrupted"
 }
 
+// MARK: - Robust log timestamp parsing
+
+/// Agent logs are normally fractional-second UTC ISO-8601, but a stray whole-second
+/// timestamp is still valid ISO-8601. The scanners used to fall back to `Date()` when
+/// the single fractional formatter failed, which silently mis-bucketed such a record
+/// into "today" and inflated today's totals. This tries both shapes and returns nil
+/// on failure so callers can DROP the record instead of mis-dating it. One instance
+/// per parseFile call (scanning is single-threaded per Aggregator.run).
+struct ISO8601Parser {
+    private let fractional = ISO8601DateFormatter()
+    private let plain = ISO8601DateFormatter()
+    init() {
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        plain.formatOptions = [.withInternetDateTime]
+    }
+    func date(from s: String?) -> Date? {
+        guard let s, !s.isEmpty else { return nil }
+        return fractional.date(from: s) ?? plain.date(from: s)
+    }
+}
+
 // MARK: - Scanner
 
 final class Scanner {
@@ -29,6 +50,18 @@ final class Scanner {
     private struct CacheEntry: Codable {
         var sig: FileSignature
         var records: [CachedRecord]
+    }
+
+    /// On-disk cache is keyed by mtime+size, so a change to the *parse logic* (not the
+    /// file) would otherwise keep serving records produced by the old parser. Bump this
+    /// whenever a scanner's output for an unchanged file changes; a version mismatch is
+    /// ignored (→ one full rescan with the new parser). v2: Codex switched from summing
+    /// `last_token_usage` to the delta of `total_token_usage`.
+    private static let cacheVersion = 2
+
+    private struct CacheFile: Codable {
+        var version: Int
+        var entries: [String: CacheEntry]
     }
 
     /// Codable mirror of RawRecord (Date as TimeInterval, optionals preserved).
@@ -144,16 +177,18 @@ final class Scanner {
 
     private func loadCache() {
         guard let data = try? Data(contentsOf: cacheURL),
-              let decoded = try? JSONDecoder().decode([String: CacheEntry].self, from: data) else {
-            return
+              let decoded = try? JSONDecoder().decode(CacheFile.self, from: data),
+              decoded.version == Scanner.cacheVersion else {
+            return   // missing, unreadable, or stale-version cache → full rescan
         }
-        cache = decoded
+        cache = decoded.entries
     }
 
     private func saveCache() {
         let dir = cacheURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(cache) else { return }
+        let file = CacheFile(version: Scanner.cacheVersion, entries: cache)
+        guard let data = try? JSONEncoder().encode(file) else { return }
         try? data.write(to: cacheURL)
     }
 }

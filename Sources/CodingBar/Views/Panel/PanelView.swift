@@ -10,14 +10,16 @@ struct PanelView: View {
     @State private var tab: Int
     @State private var refreshSpin: Double = 0
     @State private var contentHeight: CGFloat = 0
+    @State private var showSettings = false
     /// Live popover scrolls within a screen-bounded height; offscreen rendering
     /// (ImageRenderer has no update pass) uses natural height instead.
     let scrollable: Bool
 
-    init(store: UsageStore, initialTab: Int = 0, scrollable: Bool = true) {
+    init(store: UsageStore, initialTab: Int = 0, scrollable: Bool = true, initialSettings: Bool = false) {
         self.store = store
         self._tab = State(initialValue: initialTab)
         self.scrollable = scrollable
+        self._showSettings = State(initialValue: initialSettings)
     }
 
     private var snap: Snapshot { store.snapshot }
@@ -34,6 +36,19 @@ struct PanelView: View {
     }
 
     var body: some View {
+        Group {
+            if showSettings {
+                SettingsView(store: store, onClose: { showSettings = false })
+            } else {
+                mainPanel
+            }
+        }
+        .frame(width: Panel.width)
+        .background(dc.bg)
+        .environment(\.dc, dc)
+    }
+
+    private var mainPanel: some View {
         VStack(spacing: 0) {
             header
             if scrollable {
@@ -51,9 +66,6 @@ struct PanelView: View {
             provenance
             bottomNav
         }
-        .frame(width: Panel.width)
-        .background(dc.bg)
-        .environment(\.dc, dc)
     }
 
     @ViewBuilder private var tabContent: some View {
@@ -84,6 +96,13 @@ struct PanelView: View {
                     .padding(.horizontal, 3).padding(.vertical, 1)
             }
             .buttonStyle(.plain).focusEffectDisabled()
+            // Settings gear — same size / weight / color / padding as the refresh and
+            // metric buttons so the three read as one matched cluster in the corner.
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape").font(.system(size: 9, weight: .regular)).foregroundStyle(dc.fg3)
+                    .padding(.horizontal, 3).padding(.vertical, 1).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).focusEffectDisabled().help("设置")
         }
         .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
     }

@@ -54,7 +54,10 @@ enum GitCorrelator {
         for cwd in cwds.prefix(20) {
             guard !cwd.isEmpty, FileManager.default.fileExists(atPath: cwd), isGitRepo(at: cwd) else { continue }
             // "@<unix-ts>" header before each commit, then its numstat rows.
-            let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)",
+            // `--no-merges` drops merge commits so a merge's whole combined diff isn't
+            // counted as fresh output (it still over-counts non-AI/hand-written commits
+            // in the cwd — the panel labels this as approximate git attribution).
+            let out = run(args: ["-C", cwd, "log", "--since=\(sinceStr)", "--no-merges",
                                  "--numstat", "--pretty=format:@%ct"], timeout: 6.0) ?? ""
             var ts: Double = 0
             for line in out.components(separatedBy: "\n") {

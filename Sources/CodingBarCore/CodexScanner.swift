@@ -30,11 +30,18 @@ public enum CodexScanner {
         }
 
         let sessionKey = fileURL.deletingPathExtension().lastPathComponent
-        let iso = makeISO8601Formatter()
+        let iso = ISO8601Parser()
 
         var cwd = ""
         var model = "unknown"
         var records: [RawRecord] = []
+        // Codex `token_count` events carry a CUMULATIVE `total_token_usage` snapshot
+        // that grows every turn. We used to sum the per-turn `last_token_usage`, but
+        // replayed/duplicate events inflated that sum past the session's real total
+        // (measured ~1.3–1.8× across this machine's logs). Taking the positive delta
+        // of `total_token_usage` reconstructs each turn's true increment, drops
+        // duplicate snapshots (Δ≤0), and preserves per-turn timestamps for bucketing.
+        var prevInput = 0, prevCached = 0, prevOutput = 0, prevReasoning = 0
 
         data.forEachLine { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -68,32 +75,45 @@ public enum CodexScanner {
                     return
                 }
 
+                // Every non-null `info` carries `total_token_usage` (verified across
+                // every real event); the per-turn `last_token_usage` is no longer used.
                 guard let info = payload["info"] as? [String: Any],
-                      let lastUsage = info["last_token_usage"] as? [String: Any] else {
+                      let total = info["total_token_usage"] as? [String: Any] else {
                     return
                 }
 
-                let inputTokens     = lastUsage["input_tokens"] as? Int ?? 0
-                let cachedTokens    = lastUsage["cached_input_tokens"] as? Int ?? 0
-                let outputTokens    = lastUsage["output_tokens"] as? Int ?? 0
-                let reasoningTokens = lastUsage["reasoning_output_tokens"] as? Int ?? 0
+                let curInput     = total["input_tokens"] as? Int ?? 0
+                let curCached    = total["cached_input_tokens"] as? Int ?? 0
+                let curOutput    = total["output_tokens"] as? Int ?? 0
+                let curReasoning = total["reasoning_output_tokens"] as? Int ?? 0
 
-                guard inputTokens + outputTokens > 0 else { return }
+                // Δ of the cumulative counter. A counter that *drops* (post-compaction
+                // reset) starts a fresh baseline so those turns aren't lost.
+                let reset = curInput < prevInput || curOutput < prevOutput
+                let dInput     = reset ? curInput     : curInput - prevInput
+                let dCached    = reset ? curCached    : curCached - prevCached
+                let dOutput    = reset ? curOutput    : curOutput - prevOutput
+                let dReasoning = reset ? curReasoning : curReasoning - prevReasoning
+                prevInput = curInput; prevCached = curCached
+                prevOutput = curOutput; prevReasoning = curReasoning
 
-                var timestamp = Date()
-                if let tsStr = obj["timestamp"] as? String ?? payload["timestamp"] as? String {
-                    timestamp = iso.date(from: tsStr) ?? Date()
-                }
+                // No forward progress → a replayed/duplicate snapshot, nothing billed.
+                guard dInput + dOutput > 0 else { return }
 
-                // Codex: input_tokens INCLUDES cached; net = input - cached
-                let netInput = max(0, inputTokens - cachedTokens)
+                // Unparseable/absent timestamp → DROP rather than fall back to Date().
+                guard let timestamp = iso.date(from: obj["timestamp"] as? String ?? payload["timestamp"] as? String) else { return }
+
+                // Codex: input_tokens INCLUDES cached; net fresh input = input − cached.
+                // Clamp the cached delta at 0 first so a (data-wise unreachable) cached
+                // dip without a full reset can never inflate net input above dInput.
+                let netInput = max(0, dInput - max(0, dCached))
 
                 let tokens = TokenBreakdown(
                     input: netInput,
-                    output: outputTokens,
-                    cacheRead: cachedTokens,
+                    output: dOutput,
+                    cacheRead: max(0, dCached),
                     cacheWrite: 0,
-                    reasoning: reasoningTokens
+                    reasoning: max(0, dReasoning)
                 )
 
                 let record = RawRecord(
@@ -116,11 +136,5 @@ public enum CodexScanner {
         }
 
         return records
-    }
-
-    private static func makeISO8601Formatter() -> ISO8601DateFormatter {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
     }
 }

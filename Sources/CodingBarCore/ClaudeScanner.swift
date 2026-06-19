@@ -39,7 +39,7 @@ public enum ClaudeScanner {
         }
 
         let sessionKey = fileURL.deletingPathExtension().lastPathComponent
-        let iso = makeISO8601Formatter()
+        let iso = ISO8601Parser()
 
         var records: [RawRecord] = []
 
@@ -68,8 +68,9 @@ public enum ClaudeScanner {
             let model = message["model"] as? String ?? "unknown"
             let messageId = message["id"] as? String
 
-            let tsString = obj["timestamp"] as? String ?? ""
-            let timestamp = iso.date(from: tsString) ?? Date()
+            // Unparseable/absent timestamp → DROP rather than fall back to Date()
+            // (which would mis-bucket the record into "today" and inflate it).
+            guard let timestamp = iso.date(from: obj["timestamp"] as? String) else { return }
 
             let cwd = obj["cwd"] as? String ?? ""
 
@@ -110,11 +111,5 @@ public enum ClaudeScanner {
         }
 
         return records
-    }
-
-    private static func makeISO8601Formatter() -> ISO8601DateFormatter {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
     }
 }
