@@ -201,7 +201,10 @@ extension Data {
     /// fast-growing transcript would otherwise spike to several full-size transient
     /// buffers (Data + String + components array) on every rescan; here peak extra
     /// memory is ~one line. Empty lines are skipped, matching the parsers' own
-    /// trim-then-skip. Lines that aren't valid UTF-8 are skipped (as before).
+    /// trim-then-skip. A line that isn't valid UTF-8 is skipped; note this is more
+    /// resilient than the old whole-file `String(data:)` decode, which dropped the
+    /// *entire* file if any byte was invalid (`\n` is single-byte, so per-line decode
+    /// over valid files yields exactly the same lines).
     func forEachLine(_ body: (String) -> Void) {
         let newline: UInt8 = 0x0A
         var start = startIndex

@@ -32,11 +32,27 @@ final class UsageStore: ObservableObject {
         snapshot.menu.quotaPercent = quotaWindows.menuWindow(preferring: menuQuotaSource)?.remaining
     }
 
-    // Last-known online quota (Claude + Codex usage APIs). Refreshed on its own
-    // 5-min cadence and carried into every local refresh so the snapshot stays
-    // consistent between network fetches.
+    // Authoritative last-known online quota (Claude + Codex usage APIs). This — not
+    // whatever quota happens to be baked into the current snapshot — is the single
+    // source of truth, so both refresh paths can re-apply the freshest reading when
+    // they publish. refreshQuota() updates it on its own 5-min cadence; refresh()
+    // carries it into every local re-aggregation so the snapshot stays consistent.
     private var quotaWindows: [QuotaWindow] = []
     private var quotaNotes: [String] = []
+    private var quotaForecast: [String: String] = [:]
+    private var quotaFetchedAt: Date?
+
+    /// Overlay the authoritative online-quota fields onto a freshly built snapshot.
+    /// Always called on the main actor at publish time, so a local refresh that
+    /// finishes *after* a newer refreshQuota() can't republish stale quota over it
+    /// (the lost-update the two passes used to race on).
+    private func applyQuota(to snap: inout Snapshot) {
+        snap.quota = quotaWindows
+        snap.quotaNotes = quotaNotes
+        snap.quotaForecast = quotaForecast
+        snap.quotaFetchedAt = quotaFetchedAt
+        snap.menu.quotaPercent = quotaWindows.menuWindow(preferring: menuQuotaSource)?.remaining
+    }
 
     // A local re-aggregation already in flight. The 30s timer, the status-item click
     // and opening the panel all call refresh(); without this guard they pile up into
@@ -71,13 +87,13 @@ final class UsageStore: ObservableObject {
         guard !isRefreshing else { return }
         isRefreshing = true
         let q = quotaWindows
-        let notes = quotaNotes
         let pref = menuQuotaSource
         Task.detached(priority: .userInitiated) {
-            var snap = Aggregator.run(quota: q, menuQuotaProvider: pref)
-            snap.quotaNotes = notes
-            await MainActor.run { [snap] in
-                self.snapshot = snap
+            let snap = Aggregator.run(quota: q, menuQuotaProvider: pref)
+            await MainActor.run {
+                var merged = snap
+                self.applyQuota(to: &merged)   // never republish stale quota
+                self.snapshot = merged
                 self.isRefreshing = false
             }
         }
@@ -99,12 +115,10 @@ final class UsageStore: ObservableObject {
             }.value
             self.quotaWindows = result.windows
             self.quotaNotes = result.notes
+            self.quotaForecast = forecast
+            self.quotaFetchedAt = result.windows.isEmpty ? nil : nowD
             var snap = self.snapshot
-            snap.quota = result.windows
-            snap.quotaNotes = result.notes
-            snap.quotaForecast = forecast
-            snap.quotaFetchedAt = result.windows.isEmpty ? nil : nowD
-            snap.menu.quotaPercent = result.windows.menuWindow(preferring: self.menuQuotaSource)?.remaining
+            self.applyQuota(to: &snap)
             self.snapshot = snap
         }
     }

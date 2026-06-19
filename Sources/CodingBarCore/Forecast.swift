@@ -21,7 +21,10 @@ public enum Forecaster {
     // `recordAndForecast` (called from Aggregator.run, on the local-refresh detached
     // task) and `forecastByProvider` (called from refreshQuota's detached task) both
     // touch quota-history.json and can run concurrently. Serialize the read-modify-write
-    // so the two passes can't interleave into a corrupt/truncated history file.
+    // so the two passes can't interleave into a corrupt/truncated history file. This is
+    // a process-local lock; it relies on main.swift's single-instance policy (it kills
+    // older copies of itself) to keep two CodingBar processes from writing the file at
+    // once. The locked helpers below use `defer` so a future early-return can't leak it.
     private static let historyLock = NSLock()
 
     private static func loadHistory() -> [QuotaSample] {
@@ -39,8 +42,19 @@ public enum Forecaster {
         try? data.write(to: historyURL)
     }
 
-    public static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
+    /// Locked snapshot of the history file (read-only callers).
+    private static func loadHistoryLocked() -> [QuotaSample] {
         historyLock.lock()
+        defer { historyLock.unlock() }
+        return loadHistory()
+    }
+
+    /// Locked read-modify-write: append the current windows (hour-deduped), prune to
+    /// 14 days, persist, and return the updated history. The lock spans only the file
+    /// I/O — the forecast math runs lock-free on the returned copy.
+    private static func appendAndPrune(quota: [QuotaWindow], now: Date) -> [QuotaSample] {
+        historyLock.lock()
+        defer { historyLock.unlock() }
         var history = loadHistory()
 
         // Append today's samples (deduplicate by rounding to the nearest hour)
@@ -66,7 +80,11 @@ public enum Forecaster {
         let cutoff = now.timeIntervalSince1970 - 14 * 86400
         history = history.filter { $0.date >= cutoff }
         saveHistory(history)
-        historyLock.unlock()
+        return history
+    }
+
+    public static func recordAndForecast(quota: [QuotaWindow], now: Date) -> Insight? {
+        let history = appendAndPrune(quota: quota, now: now)
 
         // Forecast for Codex weekly window ("7d")
         let weekSamples = history
@@ -83,9 +101,7 @@ public enum Forecaster {
     /// Returns `[Provider.rawValue: "<Name> 周额度预计 <weekday> <time> 见底"]`.
     /// Reads the history persisted by `recordAndForecast`, so call that first.
     public static func forecastByProvider(quota: [QuotaWindow], now: Date) -> [String: String] {
-        historyLock.lock()
-        let history = loadHistory()
-        historyLock.unlock()
+        let history = loadHistoryLocked()
         var out: [String: String] = [:]
         for provider in [Provider.claude, Provider.codex] {
             guard quota.contains(where: { $0.provider == provider && $0.label == "7d" }) else { continue }
