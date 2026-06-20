@@ -10,6 +10,27 @@ import AppKit
 struct AppIconView: View {
     var side: CGFloat
 
+    // macOS icon grid (Big Sur+): the rounded-rect body fills only ~80.5% of the
+    // 1024² canvas (824² body, ~9.8% transparent padding per edge). Filling the
+    // full canvas makes the icon render a size larger than every neighbouring app
+    // in Finder/Dock/Launchpad, so the brand mark is inset into a centred body.
+    var body: some View {
+        let body = side * 0.8047
+        ZStack {
+            Color.clear
+            IconBody(side: body)
+                .frame(width: body, height: body)
+        }
+        .frame(width: side, height: side)
+    }
+}
+
+// The squircle + waveform + liveness dot, sized entirely as fractions of its own
+// edge so it renders crisp at any body size. `cornerRadius` ratio 0.2237 is
+// Apple's body-corner ratio (185/824) — applied to the body, not the full canvas.
+struct IconBody: View {
+    var side: CGFloat
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: side * 0.2237, style: .continuous)
