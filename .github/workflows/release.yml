@@ -42,10 +42,17 @@ jobs:
       - name: Zip app bundle
         run: ditto -c -k --keepParent dist/CodingBar.app "dist/CodingBar-${{ github.ref_name }}.zip"
 
+      # Stage the .app alongside an /Applications symlink so the mounted DMG shows the
+      # standard "drag CodingBar onto Applications" layout. Shipping the bare .app left users
+      # with no install affordance — they ran it in place from the read-only DMG mount.
       - name: Build DMG
         run: |
+          STAGING="dist/dmg"
+          rm -rf "$STAGING" && mkdir -p "$STAGING"
+          cp -R dist/CodingBar.app "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
           hdiutil create -volname CodingBar \
-            -srcfolder dist/CodingBar.app \
+            -srcfolder "$STAGING" \
             -ov -format UDZO \
             "dist/CodingBar-${{ github.ref_name }}.dmg"
 

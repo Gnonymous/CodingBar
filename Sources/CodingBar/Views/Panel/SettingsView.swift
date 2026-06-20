@@ -13,6 +13,7 @@ struct SettingsView: View {
 
     @State private var launchAtLogin = false
     @State private var launchUnavailable = false
+    @State private var launchNeedsApproval = false
     @State private var updateState: UpdateState = .idle
 
     private enum UpdateState: Equatable { case idle, checking, done(UpdateChecker.Result) }
@@ -74,8 +75,22 @@ struct SettingsView: View {
 
     // MARK: Rows
 
+    private var launchCaption: String? {
+        if launchUnavailable {
+            // A real .app that's just not in a stable location → tell the user to install it;
+            // a truly unbundled dev run (no .app) only needs the packaged build.
+            return Bundle.main.bundlePath.hasSuffix(".app")
+                ? lang.t("Move CodingBar to Applications to enable", "请将 CodingBar 移动到「应用程序」后启用")
+                : lang.t("Available in the packaged app", "打包为 App 后可用")
+        }
+        if launchNeedsApproval {
+            return lang.t("Allow it in System Settings → Login Items", "请在 系统设置 → 登录项 中允许")
+        }
+        return nil
+    }
+
     private var toggleRow: some View {
-        row(label: lang.t("Launch at login", "开机自启动"), caption: launchUnavailable ? lang.t("Available in the packaged app", "打包为 App 后可用") : nil) {
+        row(label: lang.t("Launch at login", "开机自启动"), caption: launchCaption) {
             Toggle("", isOn: $launchAtLogin)
                 .labelsHidden().toggleStyle(.switch).tint(dc.accent)
                 .disabled(launchUnavailable)
@@ -165,12 +180,37 @@ struct SettingsView: View {
     private func syncLaunchState() {
         let status = SMAppService.mainApp.status
         launchAtLogin = (status == .enabled)
-        // `.notFound` = running unbundled (e.g. `swift run`); registration isn't possible.
-        launchUnavailable = (status == .notFound)
+        launchUnavailable = !isStableInstall
+        // Registered but the user switched it off in System Settings; only they can re-enable
+        // it there, so surface a hint instead of a toggle that silently snaps back.
+        launchNeedsApproval = isStableInstall && (status == .requiresApproval)
+    }
+
+    /// A login item must point at a path that survives reboot. Gate availability on this, NOT
+    /// on `SMAppService.status`: an ad-hoc-signed .app that has never registered reports
+    /// `.notFound` (not `.notRegistered`) yet `register()` succeeds, so keying off `.notFound`
+    /// wrongly disabled the toggle for every freshly-installed app. The two genuinely
+    /// unregistrable cases are (1) an unbundled dev run (`swift run`: no bundle id / no .app),
+    /// where register() fails with errSMAppServiceInvalidArgument, and (2) a non-stable
+    /// location — a Gatekeeper-translocated read-only copy or a DMG mount, where register()
+    /// would persist a login item pointing at a path that vanishes on eject/relaunch.
+    private var isStableInstall: Bool {
+        guard Bundle.main.bundleIdentifier != nil else { return false }
+        let path = Bundle.main.bundlePath
+        guard path.hasSuffix(".app") else { return false }
+        return !path.contains("/AppTranslocation/") && !path.hasPrefix("/Volumes/")
     }
 
     private func setLaunchAtLogin(_ on: Bool) {
         guard !launchUnavailable else { return }
+        // `.requiresApproval` can't be cleared programmatically — bounce the user to the pane.
+        // Gate on `on` so the follow-up sync that snaps the toggle back to off doesn't re-fire
+        // onChange and open System Settings a second time.
+        if SMAppService.mainApp.status == .requiresApproval {
+            if on { SMAppService.openSystemSettingsLoginItems() }
+            syncLaunchState()
+            return
+        }
         do {
             if on {
                 if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
@@ -181,5 +221,6 @@ struct SettingsView: View {
             // Registration can fail (needs approval, unbundled) — reflect the real state.
             launchAtLogin = (SMAppService.mainApp.status == .enabled)
         }
+        syncLaunchState()
     }
 }
