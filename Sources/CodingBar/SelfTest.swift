@@ -45,9 +45,12 @@ enum SelfTest {
             data: Data(#"{"claudeAiOauth":{"accessToken":"tok","expiresAt":1700000000000}}"#.utf8))
         check("claude credential expired", claudeExpired.status == .expired)
 
+        // Regression: a long-stale `last_refresh` must still be valid. Codex tokens have
+        // no readable expiry, so only the live 401/403 decides — an 8-day staleness
+        // heuristic here used to false-negative active Codex sessions (idle >8 days).
         let codexCred = CredentialParser.parseCodexCredentials(
-            data: Data(#"{"auth_mode":"chatgpt","last_refresh":"2099-01-01T00:00:00Z","tokens":{"access_token":"ctok","account_id":"acc1"}}"#.utf8))
-        check("codex credential valid", codexCred.token == "ctok" && codexCred.accountID == "acc1" && codexCred.status == .valid)
+            data: Data(#"{"auth_mode":"chatgpt","last_refresh":"2020-01-01T00:00:00Z","tokens":{"access_token":"ctok","account_id":"acc1"}}"#.utf8))
+        check("codex credential valid despite stale last_refresh", codexCred.token == "ctok" && codexCred.accountID == "acc1" && codexCred.status == .valid)
 
         let claudeWindows = ClaudeQuotaFetcher.parse(
             Data(#"{"five_hour":{"utilization":7.0,"resets_at":"2026-06-17T08:10:00.179218+00:00"},"seven_day":{"utilization":20.0,"resets_at":null},"seven_day_opus":null,"seven_day_sonnet":{"utilization":2.0,"resets_at":null}}"#.utf8))

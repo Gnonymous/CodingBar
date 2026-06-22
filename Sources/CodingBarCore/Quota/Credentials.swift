@@ -111,9 +111,14 @@ public enum CredentialParser {
         guard let token = auth.tokens?.accessToken, !token.isEmpty else {
             return UsageCredential(token: nil, status: .parseError, message: language.t("Codex credential: missing access_token", "Codex access_token 缺失"))
         }
-        if let lastRefresh = auth.lastRefresh, isStaleCodexRefresh(lastRefresh, now: now) {
-            return UsageCredential(token: token, accountID: auth.tokens?.accountID, status: .expired, message: language.t("Codex credential may have expired", "Codex 凭证可能已过期"))
-        }
+        // `last_refresh` is only when the CLI last refreshed the token, NOT an expiry:
+        // Codex `auth.json` carries no expiry field and the refresh token is long-lived,
+        // so a weeks-old `last_refresh` says nothing about whether the access token still
+        // works. The authoritative expiry signal is the endpoint's 401/403, handled in
+        // CodexQuotaFetcher (→ authFailed). An earlier 8-day staleness heuristic here
+        // false-negatived active sessions (any user idle >8 days saw "Codex unavailable"
+        // despite a valid token), so a present token is treated as valid and the server
+        // is left to decide.
         return UsageCredential(token: token, accountID: auth.tokens?.accountID, status: .valid)
     }
 
@@ -124,11 +129,6 @@ public enum CredentialParser {
         if let timestamp = value as? Int { return date(fromTimestamp: Double(timestamp)) < now }
         if let string = value as? String, let d = parseDateTime(string) { return d < now }
         return false
-    }
-
-    private static func isStaleCodexRefresh(_ value: String, now: Date) -> Bool {
-        guard let lastRefresh = parseDateTime(value) else { return false }
-        return now.timeIntervalSince(lastRefresh) > 8 * 24 * 60 * 60
     }
 
     private static func date(fromTimestamp timestamp: Double) -> Date {
