@@ -1,33 +1,35 @@
 # Release notes
 
-One file per release, named `v<MAJOR>.<MINOR>.<PATCH>.md`. Used as the body of
-the corresponding GitHub Release page.
+One file per release, `v<MAJOR>.<MINOR>.<PATCH>.md`. Used as the GitHub
+Release body.
 
 ## Workflow
 
-`.github/workflows/release.yml` triggers on `v*` tag push, builds the `.app`,
-packages a `.dmg` + `.zip`, and runs `gh release create … --generate-notes` —
-which produces a minimal auto-changelog body.
-
-To replace that minimal body with the file in this folder, after CI finishes:
+`.github/workflows/release.yml` runs on `v*` tag push and creates the
+Release with `--generate-notes` (minimal auto-body). After CI finishes,
+overwrite the body:
 
 ```bash
-gh release edit v1.1.0 --notes-file release-notes/v1.1.0.md
+gh release edit vX.Y.Z --notes-file release-notes/vX.Y.Z.md
 ```
 
-## File structure
+## Style — concise, like a good commit
 
-Each notes file should cover:
+A few bullets of what changed and why. No marketing prose, no
+section-by-section template, no headings unless there's a real reason.
+If the release only fixes bugs, one paragraph is enough.
 
-1. **Highlights** — what's new, grouped by user-facing area, in plain prose.
-2. **Performance / privacy / behavior changes** — when material.
-3. **Install** — one-paragraph download + Gatekeeper workaround reminder.
-4. **Full Changelog link** — `https://github.com/Gnonymous/CodingBar/compare/<prev>...<this>`.
+Ship the install hint only when something about install changes (new
+arch, new minimum macOS, new Gatekeeper quirk). Otherwise skip it —
+users who got here already know how to install.
 
-Keep it readable to a non-contributor on the GitHub Releases page. Numbers and
-concrete examples beat marketing copy.
+Always end with the Full Changelog link:
+
+```
+**Full Changelog**: https://github.com/Gnonymous/CodingBar/compare/<prev>...<this>
+```
 
 ## Older releases
 
-`v1.0.0` and `v1.0.1` predate this folder; their bodies live only on the
-GitHub Releases page.
+`v1.0.0` and `v1.0.1` predate this folder; their bodies live only on
+the GitHub Releases page.
