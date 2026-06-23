@@ -24,5 +24,22 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+
+    <!-- Sparkle in-app auto-update. SUFeedURL points at the latest GitHub release's
+         appcast.xml (which CI generates and signs); SUPublicEDKey is the EdDSA
+         public half — the matching private key lives only in the GitHub Actions
+         secret SPARKLE_PRIVATE_KEY. Sparkle hard-checks signatures against this
+         public key, so even if the feed/zip were tampered with, an attacker
+         couldn't forge an installable update without the private key. -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/Gnonymous/CodingBar/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>3CWA9dR27M0p+P0QUSqNdDDK4LjIhUdlJltpVM2ExMo=</string>
+    <!-- Default off — opt-in. The user enables it in Settings, at which point Sparkle
+         starts the daily check schedule. -->
+    <key>SUEnableAutomaticChecks</key>
+    <false/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>

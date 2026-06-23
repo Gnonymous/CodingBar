@@ -6,6 +6,11 @@ import PackageDescription
 let package = Package(
     name: "CodingBar",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // Sparkle powers in-app auto-update (EdDSA-signed appcast → silent install).
+        // Pinned to a 2.x range so we follow patch fixes without breaking changes.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.8.1"),
+    ],
     targets: [
         .target(
             name: "CodingBarCore",
@@ -13,7 +18,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "CodingBar",
-            dependencies: ["CodingBarCore"],
+            dependencies: [
+                "CodingBarCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

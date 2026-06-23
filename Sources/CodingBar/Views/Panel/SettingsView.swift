@@ -14,9 +14,8 @@ struct SettingsView: View {
     @State private var launchAtLogin = false
     @State private var launchUnavailable = false
     @State private var launchNeedsApproval = false
-    @State private var updateState: UpdateState = .idle
-
-    private enum UpdateState: Equatable { case idle, checking, done(UpdateChecker.Result) }
+    @ObservedObject private var updater = UpdateManager.shared
+    @State private var autoUpdate = UpdateManager.shared.automaticChecksEnabled
 
     // This view owns `store`, so it reads the language directly (it can't read an
     // environment value it sets on itself); descendants still read \.lang.
@@ -33,6 +32,8 @@ struct SettingsView: View {
                 segRow(lang.t("Menu bar quota", "菜单栏额度"), [(Provider.claude, "Claude"), (Provider.codex, "Codex")], $store.menuQuotaSource)
                 divider
                 segRow(lang.t("Language", "界面语言"), [(AppLanguage.en, "English"), (AppLanguage.zh, "中文")], $store.language)
+                divider
+                autoUpdateRow
                 divider
                 updateRow
             }
@@ -64,7 +65,7 @@ struct SettingsView: View {
         HStack(spacing: 6) {
             Text("CodingBar \(versionLabel)").font(.system(size: 10)).foregroundStyle(dc.fg3)
             Spacer()
-            Button { NSWorkspace.shared.open(UpdateChecker.releasesPageURL) } label: {
+            Button { NSWorkspace.shared.open(UpdateManager.releasesPageURL) } label: {
                 Text("GitHub →").font(.system(size: 10, weight: .medium)).foregroundStyle(dc.accent).contentShape(Rectangle())
             }
             .buttonStyle(.plain).focusEffectDisabled()
@@ -98,19 +99,33 @@ struct SettingsView: View {
         }
     }
 
+    /// Opt-in toggle. Default off — Sparkle only schedules background checks once
+    /// the user explicitly enables this, keeping the "no automatic network" promise
+    /// truthful for users who never flip it.
+    private var autoUpdateRow: some View {
+        row(
+            label: lang.t("Auto-check for updates", "自动检查更新"),
+            caption: updater.canUpdate ? nil : lang.t("Available in the packaged app", "打包为 App 后可用")
+        ) {
+            Toggle("", isOn: $autoUpdate)
+                .labelsHidden().toggleStyle(.switch).tint(dc.accent)
+                .disabled(!updater.canUpdate)
+                .onChange(of: autoUpdate) { _, on in updater.automaticChecksEnabled = on }
+        }
+    }
+
+    /// Manual "立刻检查" — Sparkle's standard user driver provides the
+    /// version dialog, progress and restart prompt; we just trigger it.
+    /// When Sparkle has already detected a pending update, swap the label to
+    /// "立刻更新" so the affordance reads exactly as it would in the prompt itself.
     private var updateRow: some View {
-        row(label: lang.t("Check for updates", "检查更新"), caption: nil) {
-            switch updateState {
-            case .idle:
-                actionLink(lang.t("Check", "检查"), color: dc.accent) { runUpdateCheck() }
-            case .checking:
-                ProgressView().controlSize(.small).scaleEffect(0.85).frame(height: 18)
-            case .done(.upToDate(let v)):
-                Text(lang.t("Up to date · v\(v)", "已是最新 v\(v)")).font(.system(size: 10.5)).foregroundStyle(dc.fg3)
-            case .done(.updateAvailable(let v)):
-                actionLink(lang.t("New version v\(v) →", "有新版本 v\(v) →"), color: dc.accent) { NSWorkspace.shared.open(UpdateChecker.releasesPageURL) }
-            case .done(.failed):
-                actionLink(lang.t("Check failed · retry", "检查失败 · 重试"), color: dc.warn) { runUpdateCheck() }
+        row(label: lang.t("Check now", "立刻检查"), caption: nil) {
+            if !updater.canUpdate {
+                Text(lang.t("Dev build", "开发版")).font(.system(size: 10.5)).foregroundStyle(dc.fg3)
+            } else if updater.hasAvailableUpdate {
+                actionLink(lang.t("Update now →", "立刻更新 →"), color: dc.accent) { updater.checkForUpdates() }
+            } else {
+                actionLink(lang.t("Check", "检查"), color: dc.accent) { updater.checkForUpdates() }
             }
         }
     }
@@ -165,16 +180,8 @@ struct SettingsView: View {
     // MARK: Actions
 
     private var versionLabel: String {
-        let v = UpdateChecker.currentVersion
+        let v = UpdateManager.currentVersion
         return v == "dev" ? lang.t("Dev build", "开发版") : "v\(v)"
-    }
-
-    private func runUpdateCheck() {
-        updateState = .checking
-        Task {
-            let result = await UpdateChecker.check()
-            await MainActor.run { updateState = .done(result) }
-        }
     }
 
     private func syncLaunchState() {
