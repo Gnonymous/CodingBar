@@ -56,12 +56,76 @@ jobs:
             -ov -format UDZO \
             "dist/CodingBar-${{ github.ref_name }}.dmg"
 
+      # Sparkle's update channel: appcast.xml lists every version with an EdDSA
+      # signature over the matching zip. The private key lives only in this repo's
+      # SPARKLE_PRIVATE_KEY secret; the public half is baked into Info.plist
+      # (SUPublicEDKey) so the client refuses to install anything not signed by us.
+      # We download the official Sparkle release archive to get the `generate_appcast`
+      # tool — pinning the version protects against an upstream supply-chain swap.
+      - name: Validate Sparkle private key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY secret is missing. Generate a key pair locally with Sparkle's generate_keys, then add the private half to repository secrets."
+            exit 1
+          fi
+
+      # SPARKLE_VERSION should match the runtime Sparkle that ends up in Package.resolved
+      # so the appcast format the tool emits matches what the client expects. Bump them
+      # together — running `swift package update` and forgetting to bump here means CI
+      # signs the feed with an older tool than the client was built against.
+      - name: Fetch Sparkle tools (prebuilt)
+        env:
+          SPARKLE_VERSION: 2.9.3
+        run: |
+          ARCHIVE_PATH="$RUNNER_TEMP/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          TOOLS_DIR="$RUNNER_TEMP/sparkle-tools"
+          curl -fL -o "$ARCHIVE_PATH" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$TOOLS_DIR"
+          tar -xf "$ARCHIVE_PATH" -C "$TOOLS_DIR"
+          GENERATE_APPCAST="$(find "$TOOLS_DIR" -type f -name generate_appcast | head -n1)"
+          if [ -z "$GENERATE_APPCAST" ] || [ ! -x "$GENERATE_APPCAST" ]; then
+            echo "::error::generate_appcast not found in Sparkle archive"; exit 1
+          fi
+          echo "SPARKLE_BIN=$(dirname "$GENERATE_APPCAST")" >> $GITHUB_ENV
+
+      - name: Generate signed appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          # generate_appcast expects a directory containing zipped update bundles —
+          # stage just our release zip there so other artifacts don't leak into the feed.
+          SPARKLE_DIR="dist/sparkle"
+          KEY_FILE="$RUNNER_TEMP/sparkle_private.key"
+          mkdir -p "$SPARKLE_DIR"
+          cp "dist/CodingBar-${{ github.ref_name }}.zip" "$SPARKLE_DIR/"
+          printf "%s" "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          # --download-url-prefix tells the appcast where the asset will be reachable
+          # AFTER the release is published. Using the tag-specific path (not
+          # /latest/download) makes older clients still able to install historical
+          # versions if needed.
+          "$SPARKLE_BIN/generate_appcast" \
+            --ed-key-file "$KEY_FILE" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/" \
+            -o "dist/appcast.xml" \
+            "$SPARKLE_DIR"
+          rm "$KEY_FILE"
+          # Sanity check: every <item> must carry an EdDSA signature, otherwise
+          # clients will silently reject the update.
+          grep -q "sparkle:edSignature" "dist/appcast.xml"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        # appcast.xml is uploaded as a release asset; Info.plist's SUFeedURL points at
+        # https://github.com/.../releases/latest/download/appcast.xml, which always
+        # resolves to the most recent tag's appcast — no separate hosting needed.
         run: |
           gh release create "${{ github.ref_name }}" \
             "dist/CodingBar-${{ github.ref_name }}.zip" \
             "dist/CodingBar-${{ github.ref_name }}.dmg" \
+            "dist/appcast.xml" \
             --title "CodingBar ${{ github.ref_name }}" \
             --generate-notes
