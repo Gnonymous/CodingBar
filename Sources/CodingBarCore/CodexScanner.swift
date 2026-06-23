@@ -5,7 +5,9 @@ public enum CodexScanner {
     /// Token usage records only. Codex *quota* now comes from the live usage API
     /// (see `CodexQuotaFetcher`), not from the `rate_limits` snapshots embedded in
     /// the rollout logs, so this no longer does the second rate-limit pass.
-    static func scan() -> [RawRecord] {
+    /// Accepts a pre-created `Scanner` shared with `ClaudeScanner` so the on-disk cache
+    /// is loaded once per Aggregator.run() — see ClaudeScanner.scan for the rationale.
+    static func scan(scanner: Scanner) -> [RawRecord] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let sessionsDir = home
             .appendingPathComponent(".codex")
@@ -15,7 +17,6 @@ public enum CodexScanner {
             return []
         }
 
-        let scanner = Scanner()
         return scanner.scan(directory: sessionsDir) { fileURL in
             parseFile(fileURL)
         }
@@ -47,7 +48,11 @@ public enum CodexScanner {
         // next emitted record so the habits tool-mix counts Codex, not just Claude.
         var pendingTools: [String] = []
 
+        // Drain JSONSerialization's autoreleased NSDictionary/NSString tree per line —
+        // see ClaudeScanner for the rationale. Rollouts are commonly the largest jsonl
+        // files in the corpus, so this is even more important here than for Claude.
         data.forEachLine { line in
+            autoreleasepool {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty,
                   let lineData = trimmed.data(using: .utf8),
@@ -153,6 +158,7 @@ public enum CodexScanner {
 
             default:
                 break
+            }
             }
         }
 

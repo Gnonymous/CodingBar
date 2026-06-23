@@ -174,6 +174,39 @@ public struct Heatmap: Codable, Sendable {
     public init(cells: [[Double]] = [], peakLabel: String = "") { self.cells = cells; self.peakLabel = peakLabel }
 }
 
+/// All-time "profile" stats — the Insights tab's stat-card grid + GitHub-style
+/// contribution calendar, modeled on Claude Desktop's Overview. Deliberately
+/// independent of the panel's today/week/month range pill: streaks, active days and
+/// the favorite model only read meaningfully over a lifetime window. Everything here
+/// is still derived 100% locally from the same scanned `RawRecord`s — no new source.
+public struct ProfileStats: Codable, Sendable, Equatable {
+    public var sessions: Int          // distinct session log files, all-time
+    public var messages: Int          // assistant turns (one RawRecord ≈ one reply)
+    public var totalTokens: Int       // all-time total across every provider
+    public var activeDays: Int        // distinct calendar days with any activity
+    public var currentStreak: Int     // consecutive active days ending today (or yesterday)
+    public var longestStreak: Int     // longest run of consecutive active days, all-time
+    public var peakHour: Int          // 0...23 hour-of-day with the most tokens; -1 = no data
+    public var favoriteModel: String  // canonical pricing key of the most-used model; "" = none
+    public var favoriteModelProvider: Provider
+    /// 7 rows (Mon…Sun) × N week columns of normalized 0...1 daily intensity. A cell is
+    /// `-1` for days outside the window (before the first column / future days this week)
+    /// so the view can render those as blank gaps rather than zero-intensity squares.
+    public var calendar: [[Double]]
+
+    public init(sessions: Int = 0, messages: Int = 0, totalTokens: Int = 0, activeDays: Int = 0,
+                currentStreak: Int = 0, longestStreak: Int = 0, peakHour: Int = -1,
+                favoriteModel: String = "", favoriteModelProvider: Provider = .claude,
+                calendar: [[Double]] = []) {
+        self.sessions = sessions; self.messages = messages; self.totalTokens = totalTokens
+        self.activeDays = activeDays; self.currentStreak = currentStreak; self.longestStreak = longestStreak
+        self.peakHour = peakHour; self.favoriteModel = favoriteModel
+        self.favoriteModelProvider = favoriteModelProvider; self.calendar = calendar
+    }
+
+    public static let empty = ProfileStats()
+}
+
 /// Pillar ①: output correlated from local git.
 public struct OutputStat: Codable, Sendable {
     public var added: Int
@@ -194,6 +227,68 @@ public struct PeriodTotals: Codable, Sendable {
     }
 }
 
+/// Spend + tokens for one context-window size band.
+public struct ContextBucket: Codable, Sendable, Equatable {
+    public var cost: Double
+    public var tokens: Int
+    public init(cost: Double = 0, tokens: Int = 0) { self.cost = cost; self.tokens = tokens }
+    public static func + (l: ContextBucket, r: ContextBucket) -> ContextBucket {
+        ContextBucket(cost: l.cost + r.cost, tokens: l.tokens + r.tokens)
+    }
+}
+
+/// Claude spend grouped by the prompt (context-window) size at each turn — the
+/// "what's contributing to your usage" lens from Claude Code's `/usage`. Buckets by total
+/// prompt tokens: small ≤50k, mid 50–150k, large >150k. Range-aware (each Overview
+/// computes its own, so it follows the panel's range pill). **Claude-only**: a Claude
+/// `usage` block is the request's absolute prompt size (input + cache_read +
+/// cache_creation), which IS the context; Codex records are per-turn deltas of a running
+/// total, so their per-record tokens aren't an absolute context measure — they're excluded.
+public struct ContextAttribution: Codable, Sendable, Equatable {
+    public var small: ContextBucket
+    public var mid: ContextBucket
+    public var large: ContextBucket
+    public init(small: ContextBucket = .init(), mid: ContextBucket = .init(), large: ContextBucket = .init()) {
+        self.small = small; self.mid = mid; self.large = large
+    }
+    public var totalCost: Double { small.cost + mid.cost + large.cost }
+    public var totalTokens: Int { small.tokens + mid.tokens + large.tokens }
+
+    /// Bucket lower bounds (prompt tokens). A turn lands in `mid` above `midThreshold`
+    /// and in `large` above `largeThreshold`; the UI labels the bands from these.
+    public static let midThreshold = 50_000
+    public static let largeThreshold = 150_000
+}
+
+/// One named consumer in a usage-attribution table (e.g. the `hunt` skill).
+public struct AttributionRow: Codable, Sendable, Equatable, Identifiable {
+    public var id: String { name }
+    public var name: String
+    public var cost: Double
+    public var tokens: Int
+    public init(name: String, cost: Double, tokens: Int) { self.name = name; self.cost = cost; self.tokens = tokens }
+}
+
+/// Claude spend attributed to what drove each turn — the `/usage` "what's contributing to
+/// your usage" tables. Each list is a share of the **Claude total** (`totalCost`/
+/// `totalTokens`), so percentages are independent and don't sum to 100 (most turns carry
+/// no attribution at all). Range-aware; **Claude-only** (Codex logs lack these tags).
+public struct UsageAttribution: Codable, Sendable, Equatable {
+    public var skills: [AttributionRow]
+    public var subagents: [AttributionRow]
+    public var plugins: [AttributionRow]
+    public var mcpServers: [AttributionRow]
+    public var totalCost: Double      // Claude total in range — the "% of usage" denominator
+    public var totalTokens: Int
+    public init(skills: [AttributionRow] = [], subagents: [AttributionRow] = [],
+                plugins: [AttributionRow] = [], mcpServers: [AttributionRow] = [],
+                totalCost: Double = 0, totalTokens: Int = 0) {
+        self.skills = skills; self.subagents = subagents; self.plugins = plugins
+        self.mcpServers = mcpServers; self.totalCost = totalCost; self.totalTokens = totalTokens
+    }
+    public var isEmpty: Bool { skills.isEmpty && subagents.isEmpty && plugins.isEmpty && mcpServers.isEmpty }
+}
+
 public enum Range: String, Codable, Sendable, CaseIterable { case today, week, month }
 
 public struct Overview: Codable, Sendable {
@@ -211,12 +306,18 @@ public struct Overview: Codable, Sendable {
     /// instead of always showing all-time totals.
     public var models: [ModelStat]
     public var projects: [ProjectStat]
+    /// Spend grouped by context-window size at each Claude turn (Claude-only, range-aware).
+    public var contextSpend: ContextAttribution
+    /// Spend attributed to skills / subagents / plugins / MCP servers (Claude-only, range-aware).
+    public var attribution: UsageAttribution
     public init(range: Range, spend: PeriodTotals, output: OutputStat,
                 deltaVsPrevPct: Double?, deltaTokensPct: Double? = nil, trend: [DayPoint],
-                models: [ModelStat] = [], projects: [ProjectStat] = []) {
+                models: [ModelStat] = [], projects: [ProjectStat] = [],
+                contextSpend: ContextAttribution = .init(), attribution: UsageAttribution = .init()) {
         self.range = range; self.spend = spend; self.output = output
         self.deltaVsPrevPct = deltaVsPrevPct; self.deltaTokensPct = deltaTokensPct; self.trend = trend
-        self.models = models; self.projects = projects
+        self.models = models; self.projects = projects; self.contextSpend = contextSpend
+        self.attribution = attribution
     }
 
     /// Period-over-period change for the given display metric (nil = hide pill).
@@ -264,6 +365,8 @@ public struct Snapshot: Codable, Sendable {
     /// instantly and consistently. The UI picks by the user's selected range.
     public var overviews: [Overview]
     public var habits: Habits
+    /// All-time profile stats (Insights tab stat-card grid + contribution calendar).
+    public var profile: ProfileStats
     public var projects: [ProjectStat]
     public var models: [ModelStat]
     public var cache: CacheStat
@@ -291,8 +394,9 @@ public struct Snapshot: Codable, Sendable {
                 quotaNotes: [String] = [], overviews: [Overview] = [],
                 liveSessions: [LiveSession] = [], burnPerMin: Double = 0,
                 quotaForecast: [String: String] = [:], quotaFetchedAt: Date? = nil,
-                quotaFetchedByProvider: [String: Date] = [:]) {
+                quotaFetchedByProvider: [String: Date] = [:], profile: ProfileStats = .empty) {
         self.generatedAt = generatedAt; self.menu = menu; self.overview = overview; self.habits = habits
+        self.profile = profile
         self.projects = projects; self.models = models; self.cache = cache; self.quota = quota
         self.coach = coach; self.fuel = fuel; self.quotaNotes = quotaNotes
         self.overviews = overviews.isEmpty ? [overview] : overviews

@@ -145,6 +145,133 @@ struct DCHeatGrid: View {
     }
 }
 
+// MARK: - Profile stat-card grid (2 cols × 4 rows), modeled on Claude Desktop's Overview
+
+struct DCStatGrid: View {
+    @Environment(\.dc) private var dc
+    let items: [(label: String, value: String)]   // expects 8 (Sessions … Favorite model)
+
+    var body: some View {
+        // 2 per row; an odd tail keeps a balanced empty slot so widths don't jump.
+        let rows = stride(from: 0, to: items.count, by: 2).map { Array(items[$0..<min($0 + 2, items.count)]) }
+        VStack(spacing: 6) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, pair in
+                HStack(spacing: 6) {
+                    ForEach(Array(pair.enumerated()), id: \.offset) { _, it in cell(it) }
+                    if pair.count == 1 { Color.clear.frame(maxWidth: .infinity) }
+                }
+            }
+        }
+    }
+
+    private func cell(_ it: (label: String, value: String)) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(it.label).font(.system(size: 8.5)).foregroundStyle(dc.fg3).lineLimit(1)
+            Text(it.value).font(.system(size: 15, weight: .bold)).monospacedDigit()
+                .foregroundStyle(dc.fg).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(dc.elev))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(dc.sep2, lineWidth: 0.5))
+    }
+}
+
+// MARK: - Contribution calendar — GitHub-style blue, 7 rows (Mon…Sun) × week columns
+
+struct DCContribCalendar: View {
+    @Environment(\.dc) private var dc
+    @Environment(\.lang) private var lang
+    @Environment(\.colorScheme) private var scheme
+    let cells: [[Double]]   // 7 rows × N week cols; -1 = outside window (blank)
+
+    // GitHub shows only every other weekday to fit the gutter — Mon / Wed / Fri / Sun.
+    private var weekdays: [String] {
+        lang.t("M T W T F S S", "一 二 三 四 五 六 日").split(separator: " ").map(String.init)
+    }
+    private let labelW: CGFloat = 14
+
+    private func level(_ v: Double) -> Color {
+        if v < 0 { return .clear }          // outside the window → blank gap
+        if v < 0.06 { return dc.track }     // in-window day with no activity
+        let light = ["#bcd2f7", "#7da9ef", "#4a86e8", "#2f6ad0"]
+        let dark  = ["#1d3a63", "#2b5aa0", "#3f7bd6", "#5b9bff"]
+        let pal = scheme == .dark ? dark : light
+        let i = v < 0.30 ? 0 : (v < 0.55 ? 1 : (v < 0.80 ? 2 : 3))
+        return Color(hex: pal[i])
+    }
+
+    var body: some View {
+        let cols = cells.first?.count ?? 0
+        VStack(spacing: 3) {
+            ForEach(0..<min(cells.count, 7), id: \.self) { r in
+                HStack(spacing: 3) {
+                    Text(r % 2 == 0 ? weekdays[r] : "").font(.system(size: 8)).foregroundStyle(dc.fg3)
+                        .frame(width: labelW, alignment: .trailing)
+                    ForEach(0..<cols, id: \.self) { c in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(level(cells[r][c]))
+                            .aspectRatio(1, contentMode: .fit)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Usage-attribution table (one of Skills / Subagents / Plugins / MCP servers)
+// Mirrors Claude Code's `/usage` "% of usage" lists. Each row's % is a share of the
+// Claude total (passed in), so shares are independent and don't sum to 100.
+
+struct AttributionTable: View {
+    @Environment(\.dc) private var dc
+    @Environment(\.lang) private var lang
+    let title: String
+    let rows: [AttributionRow]
+    let metric: MenuMetric
+    let total: Double          // Claude total (cost or tokens) — the "% of usage" denominator
+    let dot: Color
+    @State private var expanded = false
+    private let cap = 5
+
+    private func val(_ r: AttributionRow) -> Double { metric == .cost ? r.cost : Double(r.tokens) }
+    private var sorted: [AttributionRow] { rows.sorted { val($0) > val($1) } }
+    private var shown: [AttributionRow] { expanded ? sorted : Array(sorted.prefix(cap)) }
+
+    var body: some View {
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
+                ForEach(shown) { row($0) }
+                if sorted.count > cap {
+                    Button { expanded.toggle() } label: {
+                        Text(expanded ? lang.t("Collapse", "收起")
+                                      : lang.t("… \(sorted.count - cap) more", "… 还有 \(sorted.count - cap) 项"))
+                            .font(.system(size: 10, weight: .medium)).foregroundStyle(dc.accent)
+                    }
+                    .buttonStyle(.plain).focusEffectDisabled()
+                }
+            }
+        }
+    }
+
+    private func row(_ r: AttributionRow) -> some View {
+        let share = total > 0 ? val(r) / total : 0
+        let pct = share * 100
+        let pctText = (pct > 0 && pct < 0.5) ? "<1%" : "\(Int(pct.rounded()))%"
+        return HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2).fill(dot).frame(width: 6, height: 6)
+            Text(r.name).font(.system(size: 11)).foregroundStyle(dc.fg)
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 6)
+            Text(metric == .cost ? Panel.usd(r.cost) : Panel.tok(r.tokens))
+                .font(.system(size: 9.5)).monospacedDigit().foregroundStyle(dc.fg3)
+            Text(pctText).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(dc.fg).frame(width: 36, alignment: .trailing)
+        }
+    }
+}
+
 // MARK: - Wrapping flow layout (legend chips)
 
 struct DCFlow: Layout {
