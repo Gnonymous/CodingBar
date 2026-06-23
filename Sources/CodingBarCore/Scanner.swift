@@ -2,6 +2,18 @@ import Foundation
 
 // MARK: - RawRecord
 
+/// What drove a turn, as tagged by Claude Code itself (the `attribution*` fields it
+/// writes on each assistant line with usage). Claude-only — Codex logs carry none of
+/// these, so every field is nil for Codex records. Drives the `/usage`-style "what's
+/// contributing to your usage" breakdowns (Skills / Subagents / Plugins / MCP servers).
+struct Attribution: Codable, Equatable {
+    var skill: String?
+    var agent: String?
+    var plugin: String?
+    var mcpServer: String?
+    var isEmpty: Bool { skill == nil && agent == nil && plugin == nil && mcpServer == nil }
+}
+
 struct RawRecord {
     var provider: Provider
     var model: String
@@ -13,6 +25,7 @@ struct RawRecord {
     var messageId: String?
     var sessionKey: String      // file path stem, used for session counting
     var hasInterrupt: Bool      // true if the raw line contained "[Request interrupted"
+    var attribution = Attribution()  // Claude-only usage attribution (nil-filled for Codex)
 }
 
 // MARK: - Robust log timestamp parsing
@@ -57,8 +70,11 @@ final class Scanner {
     /// whenever a scanner's output for an unchanged file changes; a version mismatch is
     /// ignored (→ one full rescan with the new parser). v2: Codex switched from summing
     /// `last_token_usage` to the delta of `total_token_usage`. v3: Codex records now
-    /// carry tool names parsed from `function_call` items.
-    private static let cacheVersion = 3
+    /// carry tool names parsed from `function_call` items. v4: Claude records now carry
+    /// the `attribution*` fields (skill / agent / plugin / MCP server). v5: cache moved
+    /// from JSON to binary property list (smaller, decodes without an NSDictionary tree
+    /// intermediate — see loadCache for the peak-memory rationale).
+    private static let cacheVersion = 5
 
     private struct CacheFile: Codable {
         var version: Int
@@ -81,6 +97,7 @@ final class Scanner {
         var messageId: String?
         var sessionKey: String
         var hasInterrupt: Bool
+        var attribution: Attribution?
     }
 
     // MARK: State
@@ -151,7 +168,8 @@ final class Scanner {
             toolNames: cached.toolNames,
             messageId: cached.messageId,
             sessionKey: cached.sessionKey,
-            hasInterrupt: cached.hasInterrupt
+            hasInterrupt: cached.hasInterrupt,
+            attribution: cached.attribution ?? Attribution()
         )
     }
 
@@ -170,15 +188,25 @@ final class Scanner {
             toolNames: raw.toolNames,
             messageId: raw.messageId,
             sessionKey: raw.sessionKey,
-            hasInterrupt: raw.hasInterrupt
+            hasInterrupt: raw.hasInterrupt,
+            // Most turns carry no attribution (plain coding lines). Persist nil instead of
+            // `{skill:null,agent:null,plugin:null,mcpServer:null}` so the cache JSON omits
+            // the field entirely — ~50 bytes per empty record across tens of thousands.
+            attribution: raw.attribution.isEmpty ? nil : raw.attribution
         )
     }
 
     // MARK: Persistence
 
     private func loadCache() {
+        // Binary property list, not JSON. JSONDecoder on Apple platforms goes through
+        // `JSONSerialization`, which first materializes a full NSDictionary/NSString tree
+        // of the whole file before walking it to construct the Swift struct — at peak
+        // both representations are alive (~140–180 MB for an 18 MB cache here). The
+        // binary plist decoder reads directly into the Swift struct: smaller file, no
+        // intermediate object tree, ~50% lower peak memory.
         guard let data = try? Data(contentsOf: cacheURL),
-              let decoded = try? JSONDecoder().decode(CacheFile.self, from: data),
+              let decoded = try? PropertyListDecoder().decode(CacheFile.self, from: data),
               decoded.version == Scanner.cacheVersion else {
             return   // missing, unreadable, or stale-version cache → full rescan
         }
@@ -189,7 +217,9 @@ final class Scanner {
         let dir = cacheURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = CacheFile(version: Scanner.cacheVersion, entries: cache)
-        guard let data = try? JSONEncoder().encode(file) else { return }
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary    // default is .xml — bigger than JSON
+        guard let data = try? encoder.encode(file) else { return }
         try? data.write(to: cacheURL)
     }
 }

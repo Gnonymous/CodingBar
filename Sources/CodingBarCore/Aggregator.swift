@@ -10,9 +10,13 @@ public enum Aggregator {
                            language: AppLanguage = .en) -> Snapshot {
         let cal = Calendar.current
 
+        // One shared Scanner so the on-disk cache is loaded (and saved) once per run,
+        // not once per provider — the cache decode is one of the heaviest steps in
+        // boot-time memory because it goes through `JSONSerialization`.
+        let scanner = Scanner()
         // token/cost/behavior aggregation is 100% local
-        let (claudeRecords, _) = ClaudeScanner.scan()
-        let codexRecords = CodexScanner.scan()
+        let (claudeRecords, _) = ClaudeScanner.scan(scanner: scanner)
+        let codexRecords = CodexScanner.scan(scanner: scanner)
         let allRecords = claudeRecords + codexRecords
 
         let todayStart = cal.startOfDay(for: now)
@@ -146,6 +150,48 @@ public enum Aggregator {
             return (models, projects)
         }
 
+        // Claude spend by context-window size (the `/usage` "what's contributing" lens).
+        // Codex is excluded: its per-record tokens are deltas of a running total, not the
+        // absolute prompt size, so they can't be bucketed by context. Range-aware via the
+        // record set passed in (each overview supplies its own range's records).
+        func contextAttribution(from records: [RawRecord]) -> ContextAttribution {
+            var small = ContextBucket(), mid = ContextBucket(), large = ContextBucket()
+            for r in records where r.provider == .claude {
+                // A Claude `usage` block is the request's absolute prompt size.
+                let ctx = r.tokens.input + r.tokens.cacheRead + r.tokens.cacheWrite
+                let b = ContextBucket(cost: Pricing.cost(model: r.model, tokens: r.tokens), tokens: r.tokens.total)
+                if ctx > ContextAttribution.largeThreshold { large = large + b }
+                else if ctx > ContextAttribution.midThreshold { mid = mid + b }
+                else { small = small + b }
+            }
+            return ContextAttribution(small: small, mid: mid, large: large)
+        }
+
+        // Claude usage attributed to skills / subagents / plugins / MCP servers — the
+        // `/usage` "what's contributing" tables. Each turn already carries Claude Code's
+        // own `attribution*` tags, so this is an exact group-and-sum (no inference). Codex
+        // is excluded (no such tags). `totalCost/Tokens` is the Claude total = the "% of
+        // usage" denominator, so a category's share is its cost / all Claude spend.
+        func usageAttribution(from records: [RawRecord]) -> UsageAttribution {
+            var skill: [String: ContextBucket] = [:], agent: [String: ContextBucket] = [:]
+            var plugin: [String: ContextBucket] = [:], mcp: [String: ContextBucket] = [:]
+            var totalCost = 0.0, totalTokens = 0
+            for r in records where r.provider == .claude {
+                let b = ContextBucket(cost: Pricing.cost(model: r.model, tokens: r.tokens), tokens: r.tokens.total)
+                totalCost += b.cost; totalTokens += b.tokens
+                if let s = r.attribution.skill { skill[s] = (skill[s] ?? .init()) + b }
+                if let a = r.attribution.agent { agent[a] = (agent[a] ?? .init()) + b }
+                if let p = r.attribution.plugin { plugin[p] = (plugin[p] ?? .init()) + b }
+                if let m = r.attribution.mcpServer { mcp[m] = (mcp[m] ?? .init()) + b }
+            }
+            func rows(_ map: [String: ContextBucket]) -> [AttributionRow] {
+                map.map { AttributionRow(name: $0.key, cost: $0.value.cost, tokens: $0.value.tokens) }
+                    .sorted { $0.cost > $1.cost }
+            }
+            return UsageAttribution(skills: rows(skill), subagents: rows(agent), plugins: rows(plugin),
+                                    mcpServers: rows(mcp), totalCost: totalCost, totalTokens: totalTokens)
+        }
+
         let (models, projects) = breakdown(from: allRecords)
 
         // cache stats are Claude only
@@ -190,6 +236,9 @@ public enum Aggregator {
         // Pillar ③ — Habits (tool mix, rhythm, heatmap)
         let habits = Behavior.build(from: allRecords, todayStart: todayStart, now: now)
 
+        // Insights profile — all-time stat-card grid + contribution calendar (offline).
+        let profile = ProfileBuilder.build(from: allRecords, now: now)
+
         // Pillar ② — Fuel gauge + active/throughput
         let (fuelGauge, isActive, throughput) = FuelCalculator.build(from: claudeRecords, now: now)
 
@@ -225,6 +274,8 @@ public enum Aggregator {
             let deltaTok: Double? = prevTok > 0 ? Double(s.tokens.total - prevTok) / Double(prevTok) * 100 : nil
             let rangeRecords = allRecords.filter { $0.timestamp >= start && $0.timestamp <= now }
             let bd = breakdown(from: rangeRecords)
+            let ctxAttr = contextAttribution(from: rangeRecords)
+            let usageAttr = usageAttribution(from: rangeRecords)
             let trend: [DayPoint]
             switch range {
             case .today: trend = trendSeries(hourBucketsToday())
@@ -239,7 +290,9 @@ public enum Aggregator {
                 deltaTokensPct: deltaTok,
                 trend: trend,
                 models: bd.models,
-                projects: bd.projects
+                projects: bd.projects,
+                contextSpend: ctxAttr,
+                attribution: usageAttr
             )
         }
         let overviewToday = makeOverview(.today, start: todayStart, output: gitRanges.today)
@@ -264,7 +317,8 @@ public enum Aggregator {
             liveSessions: liveSessions,
             burnPerMin: burnPerMin,
             quotaForecast: quotaForecast,
-            quotaFetchedAt: quota.isEmpty ? nil : now
+            quotaFetchedAt: quota.isEmpty ? nil : now,
+            profile: profile
         )
     }
 }

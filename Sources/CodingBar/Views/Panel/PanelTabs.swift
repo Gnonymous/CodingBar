@@ -478,7 +478,134 @@ struct CostTab: View {
                     }
                 }
             }
+            contextSection
+            attributionSection
         }
+    }
+
+    // MARK: 用量归因 — Skills / Subagents / Plugins / MCP servers (`/usage` "% of usage").
+    // Claude-only (Codex carries no attribution tags); follows the range pill + metric.
+
+    @ViewBuilder
+    private var attributionSection: some View {
+        let a = ov.attribution
+        let total = metric == .cost ? a.totalCost : Double(a.totalTokens)
+        if !a.isEmpty && total > 0 {
+            DCSection {
+                VStack(alignment: .leading, spacing: 15) {
+                    HStack {
+                        DCLabel(lang.t("Usage attribution", "用量归因"))
+                        Spacer()
+                        Text(lang.t("Claude · approx", "Claude · 近似")).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(dc.hover))
+                    }
+                    AttributionTable(title: lang.t("Skills · % of usage", "Skill · 占用量"),
+                                     rows: a.skills, metric: metric, total: total, dot: dc.accent)
+                    AttributionTable(title: lang.t("Subagents · % of usage", "子代理 · 占用量"),
+                                     rows: a.subagents, metric: metric, total: total, dot: dc.good)
+                    AttributionTable(title: lang.t("Plugins · % of usage", "插件 · 占用量"),
+                                     rows: a.plugins, metric: metric, total: total, dot: dc.warn)
+                    AttributionTable(title: lang.t("MCP servers · % of usage", "MCP 服务 · 占用量"),
+                                     rows: a.mcpServers, metric: metric, total: total, dot: dc.codex)
+                }
+            }
+        }
+    }
+
+    // MARK: 按上下文体量 — the `/usage` "what's contributing to your usage" lens.
+    // Claude-only (Codex tokens are deltas, not absolute context); follows the range pill
+    // and the cost/tokens metric like the rest of this tab.
+
+    private func ctxMetric(_ b: ContextBucket) -> Double { metric == .cost ? b.cost : Double(b.tokens) }
+    private var ctxTotal: Double { max(metric == .cost ? ov.contextSpend.totalCost : Double(ov.contextSpend.totalTokens), 1e-9) }
+
+    @ViewBuilder
+    private var contextSection: some View {
+        let cs = ov.contextSpend
+        let total = metric == .cost ? cs.totalCost : Double(cs.totalTokens)
+        if total > 0 {
+            DCSection {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        DCLabel(metric == .cost ? lang.t("By context size · cost", "按上下文体量 · 花费")
+                                                : lang.t("By context size · tokens", "按上下文体量 · Token"))
+                        Spacer()
+                        Text(lang.t("Claude · approx", "Claude · 近似")).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(dc.hover))
+                    }
+                    .padding(.bottom, 11)
+
+                    // Stacked share bar (small → mid → large), colored by severity.
+                    GeometryReader { g in
+                        HStack(spacing: 1) {
+                            seg(ctxMetric(cs.small), dc.good, g.size.width)
+                            seg(ctxMetric(cs.mid), dc.warn, g.size.width)
+                            seg(ctxMetric(cs.large), dc.bad, g.size.width)
+                        }
+                    }
+                    .frame(height: 8).clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(.bottom, 12)
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        ctxRow(lang.t("≤50k ctx", "≤5万 上下文"), cs.small, dc.good)
+                        ctxRow(lang.t("50–150k ctx", "5–15万 上下文"), cs.mid, dc.warn)
+                        ctxRow(lang.t(">150k ctx", ">15万 上下文"), cs.large, dc.bad)
+                    }
+
+                    // Actionable callout only when large-context spend is non-trivial.
+                    let largeShare = ctxMetric(cs.large) / ctxTotal
+                    if largeShare >= 0.10 { contextTip(largeShare).padding(.top, 12) }
+                }
+            }
+        }
+    }
+
+    private func seg(_ v: Double, _ color: Color, _ width: CGFloat) -> some View {
+        Rectangle().fill(color).frame(width: width * (v / ctxTotal))
+    }
+
+    private func ctxRow(_ label: String, _ b: ContextBucket, _ color: Color) -> some View {
+        let share = ctxMetric(b) / ctxTotal
+        return HStack(spacing: 9) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 7, height: 7)
+            Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg)
+                .frame(width: 86, alignment: .leading)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2).fill(dc.track)
+                    RoundedRectangle(cornerRadius: 2).fill(color.opacity(0.55)).frame(width: g.size.width * share)
+                }
+            }
+            .frame(height: 4)
+            Text(metric == .cost ? Panel.usd(b.cost) : Panel.tok(b.tokens))
+                .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(dc.fg)
+                .frame(width: 56, alignment: .trailing)
+            Text("\(Int((share * 100).rounded()))%").font(.system(size: 10.5)).monospacedDigit()
+                .foregroundStyle(dc.fg3).frame(width: 32, alignment: .trailing)
+        }
+    }
+
+    private func contextTip(_ share: Double) -> some View {
+        let pct = Int((share * 100).rounded())
+        let text = metric == .cost
+            ? lang.t("\(pct)% of spend came from >150k-context turns — /compact mid-task, /clear when switching tasks.",
+                     "\(pct)% 的花费来自 >15万 上下文的会话 —— 任务中途 /compact、换任务时 /clear 可省。")
+            : lang.t("\(pct)% of tokens came from >150k-context turns — /compact mid-task, /clear when switching tasks.",
+                     "\(pct)% 的 Token 来自 >15万 上下文的会话 —— 任务中途 /compact、换任务时 /clear 可省。")
+        return HStack(alignment: .top, spacing: 9) {
+            Text("◔").font(.system(size: 11, weight: .bold)).foregroundStyle(dc.warn)
+                .frame(width: 18, height: 18)
+                .background(RoundedRectangle(cornerRadius: 5).fill(dc.warn.opacity(0.16)))
+            Text(text).font(.system(size: 11)).foregroundStyle(dc.fg)
+                .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(dc.warnBg))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(dc.warnBorder, lineWidth: 0.5))
     }
 
     // Empty-state copy needs its own English wording: "No spend in Today" / "in Last 7d"
@@ -589,12 +716,88 @@ struct InsightsTab: View {
     private var ov: Overview { snap.overviews.first { $0.range == range } ?? snap.overview }
     private var rangeLabel: String { switch range { case .today: lang.t("Today", "今日"); case .week: lang.t("Last 7d", "近 7 天"); case .month: lang.t("Last 30d", "近 30 天") } }
 
+    private var p: ProfileStats { snap.profile }
+
     var body: some View {
         VStack(spacing: 0) {
+            profileBlock
             codeOutput
             habitsBlock
             coachBlock
         }
+    }
+
+    // MARK: 档案 — all-time stat-card grid + contribution calendar (Claude-Desktop-style)
+
+    private var profileBlock: some View {
+        DCSection {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    DCLabel(lang.t("Profile", "档案")); Spacer()
+                    Text(lang.t("all-time", "累计")).font(.system(size: 10)).foregroundStyle(dc.fg3)
+                }
+                .padding(.bottom, 10)
+
+                DCStatGrid(items: statItems)
+
+                HStack {
+                    Text(lang.t("Activity · last 90d", "活跃日历 · 近 90 天")).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
+                    Spacer()
+                    if p.peakHour >= 0 {
+                        Text(lang.t("Peak \(peakHourLabel)", "高峰 \(peakHourLabel)")).font(.system(size: 9.5)).foregroundStyle(dc.fg2)
+                    }
+                }
+                .padding(.top, 14).padding(.bottom, 7)
+                DCContribCalendar(cells: p.calendar)
+
+                if let fun = funFact {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("✦").font(.system(size: 10)).foregroundStyle(dc.accent)
+                        Text(fun).font(.system(size: 10.5)).foregroundStyle(dc.fg2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 11)
+                }
+            }
+        }
+    }
+
+    private var statItems: [(label: String, value: String)] {
+        [
+            (lang.t("Sessions", "会话"), Panel.int(p.sessions)),
+            (lang.t("Messages", "消息"), Panel.int(p.messages)),
+            (lang.t("Total tokens", "总 Token"), Panel.tok(p.totalTokens)),
+            (lang.t("Active days", "活跃天数"), Panel.int(p.activeDays)),
+            (lang.t("Current streak", "当前连续"), streakText(p.currentStreak)),
+            (lang.t("Longest streak", "最长连续"), streakText(p.longestStreak)),
+            (lang.t("Peak hour", "高峰时段"), p.peakHour >= 0 ? peakHourLabel : "—"),
+            (lang.t("Favorite model", "最爱模型"), favoriteModelText),
+        ]
+    }
+
+    private func streakText(_ n: Int) -> String { lang.t("\(n)d", "\(n) 天") }
+
+    // EN reads 12-hour (4 PM); ZH reads 24-hour (16:00), matching each locale's habit.
+    private var peakHourLabel: String {
+        let h = p.peakHour
+        guard h >= 0 else { return "—" }
+        let h12 = h % 12 == 0 ? 12 : h % 12
+        return lang.t("\(h12) \(h < 12 ? "AM" : "PM")", String(format: "%02d:00", h))
+    }
+
+    private var favoriteModelText: String {
+        p.favoriteModel.isEmpty ? "—" : Pricing.displayName(forCanonicalKey: p.favoriteModel)
+    }
+
+    // Flourish from Claude Desktop's Overview. ~100K tokens ≈ the text of the first
+    // Harry Potter (~77K words). Purely cosmetic, computed from the all-time total.
+    private var funFact: String? {
+        let t = p.totalTokens
+        guard t > 0 else { return nil }
+        let books = Double(t) / 100_000.0
+        let mult = books >= 1 ? Panel.int(Int(books.rounded())) : String(format: "%.1f", books)
+        return lang.t("You've burned ~\(mult)× the text of Harry Potter and the Philosopher's Stone.",
+                      "你已经烧掉约 \(mult) 本《哈利·波特与魔法石》的文字量。")
     }
 
     private var codeOutput: some View {
@@ -621,13 +824,6 @@ struct InsightsTab: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(lang.t("Tool usage mix", "工具使用占比")).font(.system(size: 9.5)).foregroundStyle(dc.fg3).padding(.bottom, 5)
                 DCToolMix(mix: snap.habits.toolMix)
-                HStack {
-                    Text(lang.t("Activity heatmap · 7d", "活跃热力 · 7 天")).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
-                    Spacer()
-                    Text(lang.t("Peak \(snap.habits.heatmap.peakLabel)", "高峰 \(snap.habits.heatmap.peakLabel)")).font(.system(size: 9.5)).foregroundStyle(dc.fg2)
-                }
-                .padding(.top, 13).padding(.bottom, 6)
-                DCHeatGrid(cells: snap.habits.heatmap.cells)
             }
         }
     }

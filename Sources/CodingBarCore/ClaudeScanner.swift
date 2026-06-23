@@ -2,7 +2,12 @@ import Foundation
 
 public enum ClaudeScanner {
 
-    static func scan() -> (records: [RawRecord], seenIds: Set<String>) {
+    /// Accepts a pre-created `Scanner` so the same on-disk cache is loaded ONCE per
+    /// Aggregator.run() and shared with the Codex scan, instead of each provider
+    /// instantiating its own Scanner and re-decoding the same cache file twice (a real
+    /// peak-memory cost — the cache decode goes through `JSONSerialization`, which keeps
+    /// a full NSDictionary tree alive alongside the Swift struct).
+    static func scan(scanner: Scanner) -> (records: [RawRecord], seenIds: Set<String>) {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let projectsDir = home
             .appendingPathComponent(".claude")
@@ -12,7 +17,6 @@ public enum ClaudeScanner {
             return ([], [])
         }
 
-        let scanner = Scanner()
         var seenIds = Set<String>()
         var allRecords: [RawRecord] = []
 
@@ -43,7 +47,13 @@ public enum ClaudeScanner {
 
         var records: [RawRecord] = []
 
+        // Drain JSONSerialization's autoreleased NSDictionary/NSString tree per line.
+        // Without this, every parsed line's NSObject tree piles up in the pool until the
+        // run loop drains it — and Aggregator.run() runs in a detached Task with no
+        // natural drain point, so a single big file would inflate RSS by hundreds of MB
+        // of "virtual" autoreleased intermediates before any of them are reclaimed.
         data.forEachLine { line in
+            autoreleasepool {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty,
                   let lineData = trimmed.data(using: .utf8),
@@ -87,6 +97,21 @@ public enum ClaudeScanner {
             }
             let toolName = allToolNames.first
 
+            // Usage attribution: Claude Code tags each assistant line (top-level, alongside
+            // `usage`) with what drove the turn — a skill, subagent, plugin, or MCP server.
+            // These power the `/usage`-style "what's contributing" breakdowns. Absent on
+            // plain coding turns, so most records carry an empty Attribution.
+            func attr(_ key: String) -> String? {
+                guard let v = obj[key] as? String, !v.isEmpty else { return nil }
+                return v
+            }
+            let attribution = Attribution(
+                skill: attr("attributionSkill"),
+                agent: attr("attributionAgent"),
+                plugin: attr("attributionPlugin"),
+                mcpServer: attr("attributionMcpServer")
+            )
+
             let tokens = TokenBreakdown(
                 input: inputTokens,
                 output: outputTokens,
@@ -105,9 +130,11 @@ public enum ClaudeScanner {
                 toolNames: allToolNames,
                 messageId: messageId,
                 sessionKey: sessionKey,
-                hasInterrupt: trimmed.contains("[Request interrupted")
+                hasInterrupt: trimmed.contains("[Request interrupted"),
+                attribution: attribution
             )
             records.append(record)
+            }
         }
 
         return records

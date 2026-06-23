@@ -75,6 +75,49 @@ final class SmokeTests: XCTestCase {
         let back = try JSONDecoder().decode(Snapshot.self, from: data)
         XCTAssertEqual(back.overview.spend.sessions, 7)
         XCTAssertEqual(back.menu.primaryText, "1.2M")
+        // The additive ProfileStats field must round-trip too.
+        XCTAssertEqual(back.profile.sessions, 202)
+        XCTAssertEqual(back.profile.currentStreak, 22)
+        XCTAssertEqual(back.profile.calendar.count, 7)
+    }
+
+    /// ProfileBuilder derives all-time stats from raw records: distinct sessions,
+    /// active days, current/longest streak (current anchors on today/yesterday),
+    /// peak hour by tokens, and the most-frequently-used model.
+    func testProfileBuilderStatsAndStreaks() {
+        let cal = Calendar.current
+        let now = cal.date(from: DateComponents(year: 2026, month: 3, day: 15, hour: 20))!  // a Sunday
+        let base = cal.startOfDay(for: now)
+        func rec(_ dayOff: Int, _ hour: Int, _ model: String, _ session: String, _ tok: Int, _ mid: String) -> RawRecord {
+            let day = cal.date(byAdding: .day, value: dayOff, to: base)!
+            let ts = cal.date(byAdding: .hour, value: hour, to: day)!
+            return RawRecord(provider: .claude, model: model, timestamp: ts, cwd: "/p",
+                             tokens: TokenBreakdown(input: tok), toolName: nil, toolNames: [],
+                             messageId: mid, sessionKey: session, hasInterrupt: false)
+        }
+        let records = [
+            // current run (today, -1, -2) → streak 3; peak hour 14 (900 tok vs 200)
+            rec(0,  14, "claude-opus-4-8",   "s1", 500, "m1"),
+            rec(-1, 14, "claude-opus-4-8",   "s1", 300, "m2"),
+            rec(-2, 14, "claude-opus-4-8",   "s2", 100, "m3"),
+            // older 4-day run (-10…-13) → longest 4; one sonnet keeps opus the favorite
+            rec(-10, 9, "claude-opus-4-8",   "s2", 50, "m4"),
+            rec(-11, 9, "claude-opus-4-8",   "s3", 50, "m5"),
+            rec(-12, 9, "claude-sonnet-4-6", "s3", 50, "m6"),
+            rec(-13, 9, "claude-opus-4-8",   "s3", 50, "m7"),
+        ]
+        let p = ProfileBuilder.build(from: records, now: now)
+        XCTAssertEqual(p.sessions, 3)
+        XCTAssertEqual(p.messages, 7)
+        XCTAssertEqual(p.activeDays, 7)
+        XCTAssertEqual(p.currentStreak, 3)
+        XCTAssertEqual(p.longestStreak, 4)
+        XCTAssertEqual(p.peakHour, 14)
+        XCTAssertEqual(p.favoriteModel, "anthropic/claude-opus-4-8")
+        XCTAssertEqual(p.favoriteModelProvider, .claude)
+        XCTAssertEqual(p.calendar.count, 7)
+        XCTAssertEqual(p.calendar.first?.count, ProfileBuilder.calendarWeeks)
+        XCTAssertEqual(p.calendar.flatMap { $0 }.max(), 1.0)  // the busiest day normalizes to 1
     }
 
     /// Codex `token_count` events are cumulative snapshots; replayed/duplicate events
@@ -140,6 +183,41 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(recs[1].toolNames, ["exec_command"])  // buffer cleared after each emitted record
         XCTAssertEqual(Behavior.bucket(toolName: "exec_command"), \ToolMix.run)
         XCTAssertEqual(Behavior.bucket(toolName: "view_image"), \ToolMix.read)
+    }
+
+    /// Claude tags each assistant line with `attribution*` fields (skill / agent / plugin /
+    /// MCP server) that drive the `/usage`-style breakdowns. The scanner must lift them onto
+    /// the record, and leave a plain turn's attribution empty.
+    func testClaudeScannerParsesUsageAttribution() throws {
+        func line(_ o: [String: Any]) -> String { String(data: try! JSONSerialization.data(withJSONObject: o), encoding: .utf8)! }
+        func asst(_ id: String, _ extra: [String: Any]) -> [String: Any] {
+            var o: [String: Any] = [
+                "type": "assistant", "timestamp": "2026-06-18T13:00:00.000Z", "cwd": "/p",
+                "message": ["id": id, "model": "claude-opus-4-8",
+                            "usage": ["input_tokens": 100, "output_tokens": 10,
+                                      "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0],
+                            "content": []],
+            ]
+            for (k, v) in extra { o[k] = v }
+            return o
+        }
+        let lines = [
+            asst("m1", ["attributionSkill": "hunt", "attributionPlugin": "superpowers"]),
+            asst("m2", ["attributionMcpServer": "playwright", "attributionMcpTool": "browser_click"]),
+            asst("m3", ["attributionAgent": "general-purpose"]),
+            asst("m4", [:]),   // plain turn → empty attribution
+        ].map(line)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let recs = ClaudeScanner.parseFile(url)
+        XCTAssertEqual(recs.count, 4)
+        XCTAssertEqual(recs[0].attribution.skill, "hunt")
+        XCTAssertEqual(recs[0].attribution.plugin, "superpowers")
+        XCTAssertEqual(recs[1].attribution.mcpServer, "playwright")
+        XCTAssertEqual(recs[2].attribution.agent, "general-purpose")
+        XCTAssertTrue(recs[3].attribution.isEmpty)
     }
 
     /// A Codex session that switches model mid-stream (`/model`) must attribute each

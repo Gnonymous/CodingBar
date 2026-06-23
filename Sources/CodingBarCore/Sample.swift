@@ -20,6 +20,16 @@ public extension Snapshot {
                 return min(0.95, base + jit - 0.06)
             }
         }
+        // 7 rows (Mon…Sun) × 13 week columns. Recent weeks denser, weekends lighter,
+        // the tail of the current (last) week left blank (-1) to mirror real output.
+        let profileCal: [[Double]] = (0..<7).map { row in
+            (0..<13).map { col -> Double in
+                if col == 12 && row >= 4 { return -1 }   // future days this week
+                let seed = Double((row * 31 + col * 17) % 11) / 11.0
+                let wk = row >= 5 ? seed * 0.5 : seed
+                return col >= 9 ? min(1.0, wk + 0.25) : max(0, wk - 0.08)
+            }
+        }
         return Snapshot(
             generatedAt: now,
             menu: MenuSummary(metric: .tokens, primaryText: "1.2M", quotaPercent: 0.26, active: true, throughput: 1400),
@@ -29,7 +39,23 @@ public extension Snapshot {
                 output: OutputStat(added: 1240, removed: 180, commits: 3, files: 18),
                 deltaVsPrevPct: 12,
                 deltaTokensPct: 9,
-                trend: trend),
+                trend: trend,
+                contextSpend: ContextAttribution(
+                    small: ContextBucket(cost: 0.52, tokens: 190_000),
+                    mid: ContextBucket(cost: 1.28, tokens: 430_000),
+                    large: ContextBucket(cost: 2.40, tokens: 640_000)),
+                attribution: UsageAttribution(
+                    skills: [AttributionRow(name: "orchestration", cost: 0.42, tokens: 120_000),
+                             AttributionRow(name: "superpowers:brainstorming", cost: 0.13, tokens: 36_000),
+                             AttributionRow(name: "hunt", cost: 0.08, tokens: 22_000),
+                             AttributionRow(name: "check", cost: 0.05, tokens: 14_000)],
+                    subagents: [AttributionRow(name: "workflow-subagent", cost: 0.30, tokens: 88_000),
+                                AttributionRow(name: "general-purpose", cost: 0.12, tokens: 34_000)],
+                    plugins: [AttributionRow(name: "superpowers", cost: 0.21, tokens: 60_000),
+                              AttributionRow(name: "skill-creator", cost: 0.05, tokens: 14_000)],
+                    mcpServers: [AttributionRow(name: "playwright", cost: 0.29, tokens: 84_000),
+                                 AttributionRow(name: "happy", cost: 0.04, tokens: 11_000)],
+                    totalCost: 4.20, totalTokens: 1_260_000)),
             habits: Habits(
                 toolMix: ToolMix(write: 52, read: 28, run: 14, search: 6),
                 rhythm: Rhythm(turnsPerSession: 11, avgMinutes: 22, interruptRate: 0.18),
@@ -67,7 +93,12 @@ public extension Snapshot {
                 "claude": "Claude weekly quota runs out Wed 15:12",
                 "codex": "Codex weekly quota runs out tomorrow 08:30",
             ],
-            quotaFetchedAt: now.addingTimeInterval(-46)
+            quotaFetchedAt: now.addingTimeInterval(-46),
+            profile: ProfileStats(
+                sessions: 202, messages: 31_256, totalTokens: 66_800_000, activeDays: 28,
+                currentStreak: 22, longestStreak: 22, peakHour: 16,
+                favoriteModel: "anthropic/claude-opus-4-8", favoriteModelProvider: .claude,
+                calendar: profileCal)
         )
     }
 }
