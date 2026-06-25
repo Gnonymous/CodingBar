@@ -6,6 +6,9 @@ import CodingBarCore
 // Header · active tab (总览 / 构成 / 洞察) · provenance · bottom nav.
 struct PanelView: View {
     @ObservedObject var store: UsageStore
+    // Drives the header's "立即更新" pill: Sparkle flips hasAvailableUpdate when a
+    // background/manual check finds a release, and this re-renders the header.
+    @ObservedObject private var updater = UpdateManager.shared
     @Environment(\.colorScheme) private var systemScheme
     @State private var tab: Int
     @State private var refreshSpin: Double = 0
@@ -87,13 +90,15 @@ struct PanelView: View {
         HStack(spacing: 8) {
             brandMark
             Text("CodingBar").font(.system(size: 13, weight: .semibold)).tracking(-0.13).foregroundStyle(dc.fg)
+                .fixedSize()
             HStack(spacing: 5) {
                 BreathingDot(size: 6, color: burning ? dc.good : dc.fg3, animate: burning)
-                Text(statusText).font(.system(size: 10.5)).foregroundStyle(dc.fg2)
+                Text(statusText).font(.system(size: 10.5)).foregroundStyle(dc.fg2).lineLimit(1).fixedSize()
             }
             .padding(.leading, 6).padding(.trailing, 7).padding(.vertical, 2)
             .background(Capsule().fill(dc.hover))
             Spacer()
+            updatePill
             metricToggle
             Button { doRefresh() } label: {
                 Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .regular)).foregroundStyle(dc.fg3)
@@ -110,6 +115,28 @@ struct PanelView: View {
             .buttonStyle(.plain).focusEffectDisabled().help(lang.t("Settings", "设置"))
         }
         .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 10)
+    }
+
+    /// "立即更新" pill — appears in the header only once Sparkle has a verified
+    /// update in hand (so it never shows in dev builds, where canUpdate is false).
+    /// Accent-filled so it reads as the one actionable item in the corner cluster;
+    /// tapping hands off to Sparkle's standard update prompt.
+    @ViewBuilder private var updatePill: some View {
+        if updater.canUpdate && updater.hasAvailableUpdate {
+            Button { updater.checkForUpdates() } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.down.circle.fill").font(.system(size: 9, weight: .semibold))
+                    Text(lang.t("Update", "立即更新")).font(.system(size: 10, weight: .semibold))
+                }
+                .fixedSize()
+                .foregroundStyle(.white)
+                .padding(.leading, 5).padding(.trailing, 7).padding(.vertical, 2)
+                .background(Capsule().fill(dc.accent))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain).focusEffectDisabled()
+            .help(lang.t("A new version is available — update now", "有新版本可用 — 立即更新"))
+        }
     }
 
     /// Metric toggle (花费 ⇄ Token) — same size / weight / color / padding as the
