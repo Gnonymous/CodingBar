@@ -290,6 +290,55 @@ final class SmokeTests: XCTestCase {
         XCTAssertFalse(Pricing.priceIsExact(model: "totally-unknown-model"))  // generic fallback rate
     }
 
+    /// The Codex weekly forecast used to linear-regress across quota *resets*: a 14-day
+    /// history is a sawtooth (remaining snaps back to ~1 each week), so the blended slope
+    /// flattened and the projected zero landed ~5 days out — then it rendered as a bare
+    /// weekday ("Mon"), which read as the Monday that had already passed. The fix regresses
+    /// only the live window, suppresses zeros falling after the window resets, and always
+    /// spells out the day. Guards all three so the regression can't silently return.
+    func testWeeklyForecastIgnoresResetsAndDisambiguatesDay() {
+        let cal = Calendar.current
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 24, hour: 12))!  // a Wednesday
+        let day = 86_400.0
+        let t0 = now.timeIntervalSince1970
+        func pt(_ daysFromNow: Double, _ r: Double) -> (t: Double, r: Double) { (t: t0 + daysFromNow * day, r: r) }
+
+        // Live window: declines 1.0 → 0.10 over the last 6 days. Analytic zero: the slope is
+        // 0.90 over 6 days = 0.15/day, so r hits 0 at 0.10/0.15 = 0.667 day after now.
+        let live = (0...6).map { pt(-6 + Double($0), 1.0 - 0.9 * (Double($0) / 6.0)) }
+        let expectedZero = t0 + (2.0 / 3.0) * day
+
+        let resetFar = now.addingTimeInterval(3 * day)   // resets well after the projected zero
+        guard let liveZero = Forecaster.predictDepletion(samples: live, resetAt: resetFar, now: now) else {
+            return XCTFail("a clean declining window must project a depletion")
+        }
+        XCTAssertEqual(liveZero.timeIntervalSince1970, expectedZero, accuracy: 3600,
+                       "clean declining window should project ~16h out")
+
+        // Prepend a *previous* window (0.30 → 0.05) before the reset jump to 1.0. Regressing
+        // the whole sawtooth (the old bug) flattens the slope; the fix trims to the live
+        // window, so the answer must be byte-identical to the live-only projection.
+        let withReset = [pt(-13, 0.30), pt(-12, 0.20), pt(-11, 0.12), pt(-10, 0.05)] + live
+        let trimmedZero = Forecaster.predictDepletion(samples: withReset, resetAt: resetFar, now: now)
+        XCTAssertEqual(trimmedZero?.timeIntervalSince1970, liveZero.timeIntervalSince1970,
+                       "samples before the reset must not shift the projection")
+
+        // A window that resets before the projected zero never runs out → no forecast.
+        let resetSoon = now.addingTimeInterval(0.25 * day)   // before the 0.667-day zero
+        XCTAssertNil(Forecaster.predictDepletion(samples: live, resetAt: resetSoon, now: now),
+                     "depletion after the reset must be suppressed")
+
+        // Day is always spelled out: today / tomorrow / weekday — never a bare ambiguous one.
+        let today15 = cal.date(bySettingHour: 15, minute: 0, second: 0, of: now)!
+        let tomorrow0830 = cal.date(byAdding: .day, value: 1, to: cal.date(bySettingHour: 8, minute: 30, second: 0, of: now)!)!
+        let inThreeDays = cal.date(byAdding: .day, value: 3, to: now)!   // Wed + 3 = Saturday
+        XCTAssertEqual(Forecaster.formatDepletion(today15, now: now, language: .en), "today 15:00")
+        XCTAssertEqual(Forecaster.formatDepletion(today15, now: now, language: .zh), "今天 15:00")
+        XCTAssertEqual(Forecaster.formatDepletion(tomorrow0830, now: now, language: .en), "tomorrow 08:30")
+        XCTAssertTrue(Forecaster.formatDepletion(inThreeDays, now: now, language: .en).hasPrefix("Sat "),
+                      "3 days out should fall back to the weekday, not today/tomorrow")
+    }
+
     func testTokenBreakdownMath() {
         var a = TokenBreakdown(input: 10, output: 5, cacheRead: 100)
         a += TokenBreakdown(input: 5, cacheWrite: 20)

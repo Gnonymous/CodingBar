@@ -1,7 +1,7 @@
 import SwiftUI
 import CodingBarCore
 
-// MARK: - Spend sparkline (prototype: polyline + 10% area fill + last dot)
+// MARK: - Spend sparkline (smooth spline + 10% area fill + last dot)
 
 struct DCSparkline: View {
     @Environment(\.dc) private var dc
@@ -19,7 +19,8 @@ struct DCSparkline: View {
             ZStack {
                 Path { p in
                     p.move(to: CGPoint(x: pad, y: h))
-                    pts.forEach { p.addLine(to: $0) }
+                    if let first = pts.first { p.addLine(to: first) }
+                    Self.addSmoothCurve(&p, through: pts)
                     p.addLine(to: CGPoint(x: w - pad, y: h))
                     p.closeSubpath()
                 }
@@ -27,7 +28,7 @@ struct DCSparkline: View {
                 Path { p in
                     guard let first = pts.first else { return }
                     p.move(to: first)
-                    pts.dropFirst().forEach { p.addLine(to: $0) }
+                    Self.addSmoothCurve(&p, through: pts)
                 }
                 .stroke(dc.accent, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
                 if let last = pts.last {
@@ -36,6 +37,19 @@ struct DCSparkline: View {
             }
         }
         .frame(height: 36)
+    }
+
+    // Catmull-Rom → cubic Bézier: smooths the polyline without overshooting the
+    // data points (tension 1/6). Assumes `p` is already positioned at pts[0];
+    // shared by the stroke and the area fill so their outlines match exactly.
+    private static func addSmoothCurve(_ p: inout Path, through pts: [CGPoint]) {
+        guard pts.count > 1 else { return }
+        for i in 0..<(pts.count - 1) {
+            let p0 = pts[max(i - 1, 0)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[min(i + 2, pts.count - 1)]
+            let c1 = CGPoint(x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6)
+            let c2 = CGPoint(x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6)
+            p.addCurve(to: p2, control1: c1, control2: c2)
+        }
     }
 }
 
