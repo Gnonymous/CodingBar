@@ -66,6 +66,31 @@ enum SelfTest {
         let mixed = claudeWindows + codexWindows
         check("tightestRemaining picks most-depleted", abs((mixed.tightestRemaining ?? 1) - 0.26) < 0.0001)
 
+        // ── Forecast (provider-agnostic: same path for Claude and Codex) ─────────
+        let fcCal = Calendar.current
+        let fcNow = fcCal.date(from: DateComponents(year: 2026, month: 6, day: 24, hour: 12))!  // Wednesday
+        let fcDay = 86_400.0, fcT0 = fcNow.timeIntervalSince1970
+        func fcPt(_ d: Double, _ r: Double) -> Forecaster.Point { (t: fcT0 + d * fcDay, r: r) }
+        // Live window 1.0 → 0.10 over 6 days ⇒ zero ≈ now + 0.667 day (16h).
+        let fcLive = (0...6).map { fcPt(-6 + Double($0), 1.0 - 0.9 * (Double($0) / 6.0)) }
+        let fcResetFar = fcNow.addingTimeInterval(3 * fcDay)
+        let fcLiveZero = Forecaster.predictDepletion(samples: fcLive, resetAt: fcResetFar, now: fcNow)
+        check("forecast projects clean decline ~16h out",
+              abs((fcLiveZero?.timeIntervalSince1970 ?? 0) - (fcT0 + (2.0 / 3.0) * fcDay)) < 3600)
+        // Samples before a reset (the old cross-reset bug) must not shift the projection.
+        let fcWithReset = [fcPt(-13, 0.30), fcPt(-12, 0.20), fcPt(-11, 0.12), fcPt(-10, 0.05)] + fcLive
+        check("forecast ignores pre-reset samples",
+              Forecaster.predictDepletion(samples: fcWithReset, resetAt: fcResetFar, now: fcNow)?.timeIntervalSince1970
+                == fcLiveZero?.timeIntervalSince1970)
+        // Window resets before the projected zero ⇒ never runs out ⇒ no forecast.
+        check("forecast suppressed when reset precedes depletion",
+              Forecaster.predictDepletion(samples: fcLive, resetAt: fcNow.addingTimeInterval(0.25 * fcDay), now: fcNow) == nil)
+        // Day always spelled out so a multi-day-out "Mon" can't read as a past weekday.
+        let fcToday = fcCal.date(bySettingHour: 15, minute: 0, second: 0, of: fcNow)!
+        let fc3d = fcCal.date(byAdding: .day, value: 3, to: fcNow)!  // Wed + 3 = Saturday
+        check("forecast formats same-day as today", Forecaster.formatDepletion(fcToday, now: fcNow, language: .en) == "today 15:00")
+        check("forecast formats multi-day as weekday", Forecaster.formatDepletion(fc3d, now: fcNow, language: .en).hasPrefix("Sat "))
+
         print(failures == 0 ? "ALL PASS" : "\(failures) FAILED")
         return failures == 0 ? 0 : 1
     }
