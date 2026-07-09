@@ -18,6 +18,10 @@ public enum Aggregator {
         let (claudeRecords, _) = ClaudeScanner.scan(scanner: scanner)
         let codexRecords = CodexScanner.scan(scanner: scanner)
         let allRecords = claudeRecords + codexRecords
+        func recordCost(_ record: RawRecord) -> Double {
+            Pricing.cost(model: record.model, tokens: record.tokens,
+                         at: record.timestamp, cacheWrite1h: record.cacheWrite1h)
+        }
 
         let todayStart = cal.startOfDay(for: now)
         func isToday(_ date: Date) -> Bool { date >= todayStart && date <= now }
@@ -27,7 +31,7 @@ public enum Aggregator {
         var todayCost: Double = 0
         var todayTokens = TokenBreakdown()
         for r in todayRecords {
-            todayCost += Pricing.cost(model: r.model, tokens: r.tokens)
+            todayCost += recordCost(r)
             todayTokens += r.tokens
         }
 
@@ -39,7 +43,7 @@ public enum Aggregator {
         func spend(since start: Date) -> (cost: Double, tokens: TokenBreakdown, cwds: [String: Int]) {
             var c: Double = 0; var t = TokenBreakdown(); var cw: [String: Int] = [:]
             for r in allRecords where r.timestamp >= start && r.timestamp <= now {
-                c += Pricing.cost(model: r.model, tokens: r.tokens)
+                c += recordCost(r)
                 t += r.tokens
                 if !r.cwd.isEmpty { cw[r.cwd, default: 0] += 1 }
             }
@@ -47,7 +51,7 @@ public enum Aggregator {
         }
         func cost(from a: Date, to b: Date) -> Double {
             var c: Double = 0
-            for r in allRecords where r.timestamp >= a && r.timestamp < b { c += Pricing.cost(model: r.model, tokens: r.tokens) }
+            for r in allRecords where r.timestamp >= a && r.timestamp < b { c += recordCost(r) }
             return c
         }
         func tokensTotal(from a: Date, to b: Date) -> Int {
@@ -82,7 +86,7 @@ public enum Aggregator {
                 var bucketCost: Double = 0
                 var bucketTokens = 0
                 for r in allRecords where r.timestamp >= b.start && r.timestamp < b.end {
-                    bucketCost += Pricing.cost(model: r.model, tokens: r.tokens)
+                    bucketCost += recordCost(r)
                     bucketTokens += r.tokens.total
                 }
                 return DayPoint(date: b.start, cost: bucketCost, tokens: bucketTokens)
@@ -118,7 +122,7 @@ public enum Aggregator {
                 let key = Pricing.normalize(model: r.model)
                 var entry = modelMap[key] ?? (tokens: TokenBreakdown(), cost: 0, exact: true)
                 entry.tokens += r.tokens
-                entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
+                entry.cost += recordCost(r)
                 entry.exact = entry.exact && Pricing.priceIsExact(model: r.model)
                 modelMap[key] = entry
             }
@@ -134,7 +138,7 @@ public enum Aggregator {
                 guard !r.cwd.isEmpty else { continue }
                 var entry = projectMap[r.cwd] ?? (tokens: TokenBreakdown(), cost: 0, lastActive: Date.distantPast)
                 entry.tokens += r.tokens
-                entry.cost += Pricing.cost(model: r.model, tokens: r.tokens)
+                entry.cost += recordCost(r)
                 if r.timestamp > entry.lastActive { entry.lastActive = r.timestamp }
                 projectMap[r.cwd] = entry
             }
@@ -159,7 +163,7 @@ public enum Aggregator {
             for r in records where r.provider == .claude {
                 // A Claude `usage` block is the request's absolute prompt size.
                 let ctx = r.tokens.input + r.tokens.cacheRead + r.tokens.cacheWrite
-                let b = ContextBucket(cost: Pricing.cost(model: r.model, tokens: r.tokens), tokens: r.tokens.total)
+                let b = ContextBucket(cost: recordCost(r), tokens: r.tokens.total)
                 if ctx > ContextAttribution.largeThreshold { large = large + b }
                 else if ctx > ContextAttribution.midThreshold { mid = mid + b }
                 else { small = small + b }
@@ -177,7 +181,7 @@ public enum Aggregator {
             var plugin: [String: ContextBucket] = [:], mcp: [String: ContextBucket] = [:]
             var totalCost = 0.0, totalTokens = 0
             for r in records where r.provider == .claude {
-                let b = ContextBucket(cost: Pricing.cost(model: r.model, tokens: r.tokens), tokens: r.tokens.total)
+                let b = ContextBucket(cost: recordCost(r), tokens: r.tokens.total)
                 totalCost += b.cost; totalTokens += b.tokens
                 if let s = r.attribution.skill { skill[s] = (skill[s] ?? .init()) + b }
                 if let a = r.attribution.agent { agent[a] = (agent[a] ?? .init()) + b }
@@ -205,8 +209,8 @@ public enum Aggregator {
             totalCacheWrite += r.tokens.cacheWrite
             totalInput      += r.tokens.input
             let key = Pricing.normalize(model: r.model)
-            let iPrice  = Pricing.inputPrice(forCanonicalKey: key)
-            let crPrice = Pricing.cacheReadPrice(forCanonicalKey: key)
+            let iPrice  = Pricing.inputPrice(forCanonicalKey: key, at: r.timestamp)
+            let crPrice = Pricing.cacheReadPrice(forCanonicalKey: key, at: r.timestamp)
             totalSavedWeightedRead += Double(r.tokens.cacheRead) * (iPrice - crPrice)
         }
 

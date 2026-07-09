@@ -20,6 +20,9 @@ struct RawRecord {
     var timestamp: Date
     var cwd: String
     var tokens: TokenBreakdown
+    /// Portion of `tokens.cacheWrite` created with Claude's 1-hour cache TTL.
+    /// The remainder is the 5-minute default cache write tier.
+    var cacheWrite1h: Int = 0
     var toolName: String?       // first tool in this turn (backwards compat)
     var toolNames: [String]     // ALL tool_use names in this turn
     var messageId: String?
@@ -73,8 +76,9 @@ final class Scanner {
     /// carry tool names parsed from `function_call` items. v4: Claude records now carry
     /// the `attribution*` fields (skill / agent / plugin / MCP server). v5: cache moved
     /// from JSON to binary property list (smaller, decodes without an NSDictionary tree
-    /// intermediate — see loadCache for the peak-memory rationale).
-    private static let cacheVersion = 5
+    /// intermediate — see loadCache for the peak-memory rationale). v6: Claude records
+    /// preserve the 1-hour prompt-cache portion for duration-aware billing.
+    private static let cacheVersion = 6
 
     private struct CacheFile: Codable {
         var version: Int
@@ -91,6 +95,7 @@ final class Scanner {
         var output: Int
         var cacheRead: Int
         var cacheWrite: Int
+        var cacheWrite1h: Int
         var reasoning: Int
         var toolName: String?
         var toolNames: [String]
@@ -164,6 +169,7 @@ final class Scanner {
             timestamp: Date(timeIntervalSince1970: cached.timestamp),
             cwd: cached.cwd,
             tokens: TokenBreakdown(input: cached.input, output: cached.output, cacheRead: cached.cacheRead, cacheWrite: cached.cacheWrite, reasoning: cached.reasoning),
+            cacheWrite1h: cached.cacheWrite1h,
             toolName: cached.toolName,
             toolNames: cached.toolNames,
             messageId: cached.messageId,
@@ -183,6 +189,7 @@ final class Scanner {
             output: raw.tokens.output,
             cacheRead: raw.tokens.cacheRead,
             cacheWrite: raw.tokens.cacheWrite,
+            cacheWrite1h: raw.cacheWrite1h,
             reasoning: raw.tokens.reasoning,
             toolName: raw.toolName,
             toolNames: raw.toolNames,

@@ -181,10 +181,12 @@ enum FuelCalculator {
         // Burn rate: $ spent over the last minute (≈ $/min).
         var burn: Double = 0
         for r in claudeRecords where r.timestamp >= minuteAgo && r.timestamp <= now {
-            burn += Pricing.cost(model: r.model, tokens: r.tokens)
+            burn += Pricing.cost(model: r.model, tokens: r.tokens,
+                                 at: r.timestamp, cacheWrite1h: r.cacheWrite1h)
         }
         for r in codexRecords where r.timestamp >= minuteAgo && r.timestamp <= now {
-            burn += Pricing.cost(model: r.model, tokens: r.tokens)
+            burn += Pricing.cost(model: r.model, tokens: r.tokens,
+                                 at: r.timestamp, cacheWrite1h: r.cacheWrite1h)
         }
 
         // Group Claude records by session; surface those active within 90s.

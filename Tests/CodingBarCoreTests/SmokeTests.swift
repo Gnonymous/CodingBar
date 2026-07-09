@@ -220,6 +220,28 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(recs[3].attribution.isEmpty)
     }
 
+    func testClaudeScannerPreservesOneHourCacheWrites() throws {
+        let record: [String: Any] = [
+            "type": "assistant", "timestamp": "2026-07-01T13:00:00.000Z", "cwd": "/p",
+            "message": [
+                "id": "m1", "model": "claude-fable-5", "content": [],
+                "usage": [
+                    "input_tokens": 100, "output_tokens": 10,
+                    "cache_read_input_tokens": 50, "cache_creation_input_tokens": 80,
+                    "cache_creation": ["ephemeral_1h_input_tokens": 60],
+                ],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: record)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parsed = try XCTUnwrap(ClaudeScanner.parseFile(url).first)
+        XCTAssertEqual(parsed.tokens.cacheWrite, 80)
+        XCTAssertEqual(parsed.cacheWrite1h, 60)
+    }
+
     /// A Codex session that switches model mid-stream (`/model`) must attribute each
     /// turn to the model in effect AT that turn, not freeze on the session's first one
     /// (the `model == "unknown"` guard used to ignore every later turn_context).
@@ -285,9 +307,27 @@ final class SmokeTests: XCTestCase {
 
     func testPriceIsExactFlagsOnlyFallbackModels() {
         XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-4-8"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-sonnet-5"))
         XCTAssertTrue(Pricing.priceIsExact(model: "gpt-5.5-codex"))
         XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.1"))                 // no table/family match
         XCTAssertFalse(Pricing.priceIsExact(model: "totally-unknown-model"))  // generic fallback rate
+    }
+
+    func testPricingUsesCacheDurationAndSonnetFiveEffectiveDates() {
+        let millionTokens = TokenBreakdown(input: 1_000_000, output: 1_000_000,
+                                           cacheRead: 1_000_000, cacheWrite: 1_000_000)
+        let july = Date(timeIntervalSince1970: 1_783_555_200)       // 2026-07-01 UTC
+        let september = Date(timeIntervalSince1970: 1_788_220_800)  // 2026-09-01 UTC
+
+        XCTAssertEqual(Pricing.normalize(model: "claude-sonnet-5"), "anthropic/claude-sonnet-5")
+        XCTAssertEqual(Pricing.cost(model: "claude-fable-5", tokens: millionTokens,
+                                    at: july, cacheWrite1h: 1_000_000), 81, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-opus-4-8", tokens: millionTokens,
+                                    at: july, cacheWrite1h: 1_000_000), 40.5, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
+                                    at: july, cacheWrite1h: 1_000_000), 16.2, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
+                                    at: september, cacheWrite1h: 1_000_000), 24.3, accuracy: 0.000_001)
     }
 
     /// The Codex weekly forecast used to linear-regress across quota *resets*: a 14-day

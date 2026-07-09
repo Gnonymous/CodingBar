@@ -46,7 +46,7 @@ enum Coach {
         // Cache read price delta is small; include it for completeness
         let opusCacheReadPrice  = Pricing.cacheReadPrice(forCanonicalKey: opusKey)
         let haikuCacheReadPrice = Pricing.cacheReadPrice(forCanonicalKey: haikuKey)
-        let opusOutputPricePerM  = 75.0   // USD/1M
+        let opusOutputPricePerM  = 25.0   // USD/1M
         let haikuOutputPricePerM =  5.0   // USD/1M
 
         let savedInput     = Double(totalSimpleNetInput)  * (opusInputPrice  - haikuInputPrice)  / 1_000_000
@@ -75,9 +75,12 @@ enum Coach {
             totalWrite += r.tokens.cacheWrite
             totalRead += r.tokens.cacheRead
             let key = Pricing.normalize(model: r.model)
-            let writePrice = Pricing.inputPrice(forCanonicalKey: key)    // creation ≈ input price
-            let readPrice = Pricing.cacheReadPrice(forCanonicalKey: key)
-            totalWriteCost += Double(r.tokens.cacheWrite) * writePrice / 1_000_000
+            let writePrice = Pricing.inputPrice(forCanonicalKey: key, at: r.timestamp)
+            let readPrice = Pricing.cacheReadPrice(forCanonicalKey: key, at: r.timestamp)
+            totalWriteCost += Pricing.cost(model: r.model,
+                                            tokens: TokenBreakdown(cacheWrite: r.tokens.cacheWrite),
+                                            at: r.timestamp,
+                                            cacheWrite1h: r.cacheWrite1h)
             totalReadSavings += Double(r.tokens.cacheRead) * (writePrice - readPrice) / 1_000_000
         }
 

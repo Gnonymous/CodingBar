@@ -24,6 +24,17 @@ enum SelfTest {
         check("token total", TokenBreakdown(input: 10, output: 5, cacheRead: 100).total == 115)
         check("token add", (TokenBreakdown(input: 1) + TokenBreakdown(input: 2)).input == 3)
 
+        let millionTokens = TokenBreakdown(input: 1_000_000, output: 1_000_000,
+                                           cacheRead: 1_000_000, cacheWrite: 1_000_000)
+        let july = Date(timeIntervalSince1970: 1_783_555_200)
+        let september = Date(timeIntervalSince1970: 1_788_220_800)
+        check("Fable 5 1h cache pricing", abs(Pricing.cost(model: "claude-fable-5", tokens: millionTokens,
+                                                            at: july, cacheWrite1h: 1_000_000) - 81) < 0.000_001)
+        check("Sonnet 5 intro pricing", abs(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
+                                                          at: july, cacheWrite1h: 1_000_000) - 16.2) < 0.000_001)
+        check("Sonnet 5 standard pricing", abs(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
+                                                             at: september, cacheWrite1h: 1_000_000) - 24.3) < 0.000_001)
+
         let snap = Aggregator.run()
         check("aggregator menu non-empty", !snap.menu.primaryText.isEmpty)
         check("aggregator cost non-negative", snap.overview.spend.cost >= 0)

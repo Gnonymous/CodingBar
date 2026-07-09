@@ -70,6 +70,9 @@ public enum ClaudeScanner {
 
             let inputTokens = usage["input_tokens"] as? Int ?? 0
             let cacheWrite  = usage["cache_creation_input_tokens"] as? Int ?? 0
+            let cacheCreation = usage["cache_creation"] as? [String: Any]
+            let cacheWrite1h = min(cacheWrite,
+                                   max(0, cacheCreation?["ephemeral_1h_input_tokens"] as? Int ?? 0))
             let cacheRead   = usage["cache_read_input_tokens"] as? Int ?? 0
             let outputTokens = usage["output_tokens"] as? Int ?? 0
 
@@ -126,6 +129,7 @@ public enum ClaudeScanner {
                 timestamp: timestamp,
                 cwd: cwd,
                 tokens: tokens,
+                cacheWrite1h: cacheWrite1h,
                 toolName: toolName,
                 toolNames: allToolNames,
                 messageId: messageId,

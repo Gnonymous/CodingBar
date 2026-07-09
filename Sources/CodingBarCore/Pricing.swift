@@ -10,34 +10,36 @@ public enum Pricing {
         var input: Double
         var output: Double
         var cacheRead: Double
-        var cacheWrite: Double
+        var cacheWrite5m: Double
+        var cacheWrite1h: Double
     }
 
-    private static let fallback = ModelPrice(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75)
+    private static let fallback = ModelPrice(input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6)
 
     private static let priceTable: [String: ModelPrice] = [
         // Anthropic Claude — official models
-        "anthropic/claude-opus-4-8":   ModelPrice(input: 15,   output: 75,  cacheRead: 1.5,   cacheWrite: 18.75),
-        "anthropic/claude-opus-4-7":   ModelPrice(input: 15,   output: 75,  cacheRead: 1.5,   cacheWrite: 18.75),
-        "anthropic/claude-opus-4-6":   ModelPrice(input: 15,   output: 75,  cacheRead: 1.5,   cacheWrite: 18.75),
-        "anthropic/claude-fable-5":    ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite: 3.75),
-        "anthropic/claude-sonnet-4-6": ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite: 3.75),
-        "anthropic/claude-haiku-4-5":  ModelPrice(input: 1,    output: 5,   cacheRead: 0.1,   cacheWrite: 1.25),
+        "anthropic/claude-opus-4-8":   ModelPrice(input: 5,    output: 25,  cacheRead: 0.5,   cacheWrite5m: 6.25, cacheWrite1h: 10),
+        "anthropic/claude-opus-4-7":   ModelPrice(input: 5,    output: 25,  cacheRead: 0.5,   cacheWrite5m: 6.25, cacheWrite1h: 10),
+        "anthropic/claude-opus-4-6":   ModelPrice(input: 5,    output: 25,  cacheRead: 0.5,   cacheWrite5m: 6.25, cacheWrite1h: 10),
+        "anthropic/claude-fable-5":    ModelPrice(input: 10,   output: 50,  cacheRead: 1,     cacheWrite5m: 12.5, cacheWrite1h: 20),
+        "anthropic/claude-sonnet-5":   ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
+        "anthropic/claude-sonnet-4-6": ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
+        "anthropic/claude-haiku-4-5":  ModelPrice(input: 1,    output: 5,   cacheRead: 0.1,   cacheWrite5m: 1.25, cacheWrite1h: 2),
         // OpenAI models (accessed via Claude Code remote MCP or Codex)
-        "openai/gpt-5.5":              ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite: 0),
-        "openai/gpt-5.4":              ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite: 0),
-        "openai/gpt-5.4-mini":         ModelPrice(input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite: 0),
+        "openai/gpt-5.5":              ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0),
+        "openai/gpt-5.4":              ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0),
+        "openai/gpt-5.4-mini":         ModelPrice(input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite5m: 0, cacheWrite1h: 0),
         // Codex CLI model variants (gpt-5.x-codex) — priced as the gpt-5.x family
-        "openai/gpt-5.5-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite: 0),
-        "openai/gpt-5.4-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite: 0),
-        "openai/gpt-5.3-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite: 0),
-        "openai/gpt-5.2-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite: 0),
-        "openai/o1":                   ModelPrice(input: 15,   output: 60,  cacheRead: 7.5,   cacheWrite: 0),
+        "openai/gpt-5.5-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0),
+        "openai/gpt-5.4-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0),
+        "openai/gpt-5.3-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0),
+        "openai/gpt-5.2-codex":        ModelPrice(input: 1.25, output: 10,  cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0),
+        "openai/o1":                   ModelPrice(input: 15,   output: 60,  cacheRead: 7.5,   cacheWrite5m: 0, cacheWrite1h: 0),
         // Other providers seen in logs (best-effort pricing)
-        "deepseek/deepseek-v4-flash":  ModelPrice(input: 0.27, output: 1.1, cacheRead: 0.07,  cacheWrite: 0),
-        "deepseek/deepseek-v4-pro":    ModelPrice(input: 0.55, output: 2.19,cacheRead: 0.14,  cacheWrite: 0),
-        "mimo/mimo-v2.5-pro":          ModelPrice(input: 1,    output: 4,   cacheRead: 0.5,   cacheWrite: 0),
-        "mimo/mimo-v2.5":              ModelPrice(input: 0.5,  output: 2,   cacheRead: 0.25,  cacheWrite: 0),
+        "deepseek/deepseek-v4-flash":  ModelPrice(input: 0.27, output: 1.1, cacheRead: 0.07,  cacheWrite5m: 0, cacheWrite1h: 0),
+        "deepseek/deepseek-v4-pro":    ModelPrice(input: 0.55, output: 2.19,cacheRead: 0.14,  cacheWrite5m: 0, cacheWrite1h: 0),
+        "mimo/mimo-v2.5-pro":          ModelPrice(input: 1,    output: 4,   cacheRead: 0.5,   cacheWrite5m: 0, cacheWrite1h: 0),
+        "mimo/mimo-v2.5":              ModelPrice(input: 0.5,  output: 2,   cacheRead: 0.25,  cacheWrite5m: 0, cacheWrite1h: 0),
     ]
 
     /// alias → canonical model key (exact, lowercase)
@@ -48,6 +50,7 @@ public enum Pricing {
         for alias in ["opus-4.7", "claude-opus-4-7"] { m[alias] = "anthropic/claude-opus-4-7" }
         for alias in ["opus-4.6", "claude-opus-4-6"] { m[alias] = "anthropic/claude-opus-4-6" }
         for alias in ["fable-5", "claude-fable-5"] { m[alias] = "anthropic/claude-fable-5" }
+        for alias in ["sonnet-5", "claude-sonnet-5"] { m[alias] = "anthropic/claude-sonnet-5" }
         for alias in ["sonnet-4.6", "claude-sonnet-4-6", "sonnet"] { m[alias] = "anthropic/claude-sonnet-4-6" }
         for alias in ["haiku-4.5", "claude-haiku-4-5", "haiku",
                       "claude-haiku-4-5-20251001"] { m[alias] = "anthropic/claude-haiku-4-5" }
@@ -77,6 +80,7 @@ public enum Pricing {
         // Family keyword fallback (ordered most-specific first)
         if lower.contains("opus")         { return "anthropic/claude-opus-4-8" }
         if lower.contains("fable")        { return "anthropic/claude-fable-5" }
+        if lower.contains("sonnet-5")     { return "anthropic/claude-sonnet-5" }
         if lower.contains("sonnet")       { return "anthropic/claude-sonnet-4-6" }
         if lower.contains("haiku")        { return "anthropic/claude-haiku-4-5" }
         // Codex variants (gpt-5.x-codex) before the plain gpt-5.x rules
@@ -120,6 +124,7 @@ public enum Pricing {
         "anthropic/claude-opus-4-7":   "Opus 4.7",
         "anthropic/claude-opus-4-6":   "Opus 4.6",
         "anthropic/claude-fable-5":    "Fable 5",
+        "anthropic/claude-sonnet-5":   "Sonnet 5",
         "anthropic/claude-sonnet-4-6": "Sonnet 4.6",
         "anthropic/claude-haiku-4-5":  "Haiku 4.5",
         "openai/gpt-5.5":              "GPT-5.5",
@@ -146,15 +151,29 @@ public enum Pricing {
         return key
     }
 
-    /// Compute USD cost for a token breakdown, given the raw model string.
-    public static func cost(model: String, tokens: TokenBreakdown) -> Double {
+    /// First instant when Sonnet 5 exits its launch price and returns to $3/$15.
+    private static let sonnet5StandardPriceStarts = Date(timeIntervalSince1970: 1_788_220_800)
+    private static let sonnet5IntroPrice = ModelPrice(input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4)
+
+    private static func price(forCanonicalKey key: String, at timestamp: Date) -> ModelPrice {
+        if key == "anthropic/claude-sonnet-5", timestamp < sonnet5StandardPriceStarts {
+            return sonnet5IntroPrice
+        }
+        return priceTable[key] ?? fallback
+    }
+
+    /// Compute USD cost for one log record at its historical price point.
+    public static func cost(model: String, tokens: TokenBreakdown, at timestamp: Date, cacheWrite1h: Int = 0) -> Double {
         let key = normalize(model: model)
-        let p = priceTable[key] ?? fallback
+        let p = price(forCanonicalKey: key, at: timestamp)
+        let oneHourWrites = min(max(cacheWrite1h, 0), tokens.cacheWrite)
+        let fiveMinuteWrites = tokens.cacheWrite - oneHourWrites
 
         let c = (Double(tokens.input)      * p.input
                + Double(tokens.output + tokens.reasoning) * p.output
                + Double(tokens.cacheRead)  * p.cacheRead
-               + Double(tokens.cacheWrite) * p.cacheWrite) / 1_000_000
+               + Double(fiveMinuteWrites)  * p.cacheWrite5m
+               + Double(oneHourWrites)     * p.cacheWrite1h) / 1_000_000
         return c
     }
 
@@ -170,12 +189,12 @@ public enum Pricing {
     }
 
     /// Input price (per 1M) for a canonical key — used for cache savings calculation.
-    public static func inputPrice(forCanonicalKey key: String) -> Double {
-        (priceTable[key] ?? fallback).input
+    public static func inputPrice(forCanonicalKey key: String, at timestamp: Date = Date()) -> Double {
+        price(forCanonicalKey: key, at: timestamp).input
     }
 
     /// Cache read price (per 1M) for a canonical key.
-    public static func cacheReadPrice(forCanonicalKey key: String) -> Double {
-        (priceTable[key] ?? fallback).cacheRead
+    public static func cacheReadPrice(forCanonicalKey key: String, at timestamp: Date = Date()) -> Double {
+        price(forCanonicalKey: key, at: timestamp).cacheRead
     }
 }
