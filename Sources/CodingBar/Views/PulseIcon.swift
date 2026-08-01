@@ -28,29 +28,24 @@ enum PulseGlyph {
     }
 }
 
-// MARK: - Pulse / heartbeat glyph (menu bar)
+// MARK: - Pulse / heartbeat glyph (still frame)
 // Monochrome white/black pulse (template — tinted by the menu-bar appearance via
 // the caller's foregroundStyle) with a single green liveness dot at the right
-// terminus. When an agent is active the dot breathes (gentle scale+opacity) and
-// the whole line pulses — faster as throughput rises; idle, the dot is a steady
-// gray and the line is still.
+// terminus: green when an agent is active, steady gray when idle.
+//
+// This is the *static* rendition, used by the offscreen renderer and anywhere the mark
+// appears outside the status item. The live menu-bar glyph is `PulseLayerView`, which
+// breathes via Core Animation — a SwiftUI animation inside the NSStatusItem re-lays-out
+// the entire item every frame (measured: 60% of a core). Both read `PulseGlyph`, so the
+// mark is identical.
 struct PulseIcon: View {
     var active: Bool
-    var throughput: Double
 
     // Glyph box. The waveform fills an inset rect; the dot caps the right end and
     // pokes a hair past it, so the box leaves room on the right for the dot.
     private let box = CGSize(width: 18, height: 13)
     private let lineWidth: CGFloat = 1.5
     private let dotRadius: CGFloat = 1.7
-
-    @State private var phase: Double = 0
-    @State private var inhale = false
-
-    private var period: Double {
-        let clamped = min(max(throughput, 0), 2000)
-        return 1.6 - clamped / 2000   // 1.6s → 0.6s
-    }
 
     // Inner rect the waveform maps into (leaves room for the round caps and the
     // dot's radius on the right). The dot's center is the waveform's terminus.
@@ -73,28 +68,13 @@ struct PulseIcon: View {
                 .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
                 .frame(width: inner.width, height: inner.height)
                 .offset(x: inner.minX, y: inner.minY)
-                .opacity(active ? 0.78 + 0.22 * sin(phase * .pi * 2) : 1.0)
 
             Circle()
                 .fill(dotColor)
                 .frame(width: dotRadius * 2, height: dotRadius * 2)
                 .position(dotCenter)
-                // Breathe only while active (scale .78→1, opacity .55→1); steady idle.
-                .opacity(active ? (inhale ? 1.0 : 0.55) : 1.0)
-                .scaleEffect(active ? (inhale ? 1.0 : 0.78) : 1.0)
         }
         .frame(width: box.width, height: box.height)
-        .onAppear { if active { startPulsing() } }
-        .onChange(of: active) { _, isActive in
-            if isActive { startPulsing() }
-            else { withAnimation(.easeOut(duration: 0.3)) { phase = 0; inhale = false } }
-        }
-    }
-
-    private func startPulsing() {
-        phase = 0
-        withAnimation(.linear(duration: period).repeatForever(autoreverses: false)) { phase = 1 }
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) { inhale = true }
     }
 }
 
