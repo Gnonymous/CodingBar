@@ -107,21 +107,42 @@ final class Scanner {
 
     // MARK: State
 
-    private var cache: [String: CacheEntry] = [:]
-    private let cacheURL: URL
+    // Cache state is process-wide, not per-instance. Aggregator.run() builds a fresh
+    // Scanner on every refresh pass, and this cache is 10 MB of binary plist here —
+    // decoding it per pass cost 745 ms of a ~2 s pass to rebuild entries that were
+    // already in memory and still valid. The file is read once per process and written
+    // back whenever entries change, so the next launch still starts warm.
+    //
+    // The lock is held across a whole scan(). Passes are already serialized by
+    // UsageStore's coalescing guard, so it is uncontended in practice; it exists so two
+    // overlapping passes degrade to "one waits" instead of racing on the dictionary.
+    private static let lock = NSLock()
+    private static var entries: [String: CacheEntry] = [:]
+    private static var didReadDisk = false
 
-    init() {
+    private static let cacheURL: URL = {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent("CodingBar") ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        cacheURL = support.appendingPathComponent("scan-cache.json")
-        loadCache()
+        return support.appendingPathComponent("scan-cache.json")
+    }()
+
+    /// How many times the on-disk cache has been read this process. Test observability.
+    static private(set) var diskDecodeCount = 0
+
+    init() {
+        Scanner.lock.lock()
+        defer { Scanner.lock.unlock() }
+        loadCacheLocked()
     }
 
     // MARK: Public API
 
     func scan(directory: URL, parse: (URL) -> [RawRecord]) -> [RawRecord] {
+        Scanner.lock.lock()
+        defer { Scanner.lock.unlock() }
+
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
@@ -142,7 +163,7 @@ final class Scanner {
             }
             let sig = FileSignature(mtime: mtime, size: size)
 
-            if let entry = cache[path],
+            if let entry = Scanner.entries[path],
                entry.sig.mtime == sig.mtime,
                entry.sig.size == sig.size {
                 results += entry.records.map(rawRecord(from:))
@@ -151,12 +172,12 @@ final class Scanner {
 
             let parsed = parse(fileURL)
             let cached = CacheEntry(sig: sig, records: parsed.map(cachedRecord(from:)))
-            cache[path] = cached
+            Scanner.entries[path] = cached
             dirty = true
             results += parsed
         }
 
-        if dirty { saveCache() }
+        if dirty { saveCacheLocked() }
         return results
     }
 
@@ -205,25 +226,31 @@ final class Scanner {
 
     // MARK: Persistence
 
-    private func loadCache() {
+    /// Caller must hold `Scanner.lock`. Reads the file at most once per process.
+    private func loadCacheLocked() {
+        guard !Scanner.didReadDisk else { return }
+        Scanner.didReadDisk = true
+        Scanner.diskDecodeCount += 1
         // Binary property list, not JSON. JSONDecoder on Apple platforms goes through
         // `JSONSerialization`, which first materializes a full NSDictionary/NSString tree
         // of the whole file before walking it to construct the Swift struct — at peak
         // both representations are alive (~140–180 MB for an 18 MB cache here). The
         // binary plist decoder reads directly into the Swift struct: smaller file, no
         // intermediate object tree, ~50% lower peak memory.
-        guard let data = try? Data(contentsOf: cacheURL),
+        guard let data = try? Data(contentsOf: Scanner.cacheURL),
               let decoded = try? PropertyListDecoder().decode(CacheFile.self, from: data),
               decoded.version == Scanner.cacheVersion else {
             return   // missing, unreadable, or stale-version cache → full rescan
         }
-        cache = decoded.entries
+        Scanner.entries = decoded.entries
     }
 
-    private func saveCache() {
+    /// Caller must hold `Scanner.lock`.
+    private func saveCacheLocked() {
+        let cacheURL = Scanner.cacheURL
         let dir = cacheURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let file = CacheFile(version: Scanner.cacheVersion, entries: cache)
+        let file = CacheFile(version: Scanner.cacheVersion, entries: Scanner.entries)
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary    // default is .xml — bigger than JSON
         guard let data = try? encoder.encode(file) else { return }
