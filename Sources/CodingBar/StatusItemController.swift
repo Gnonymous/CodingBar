@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import CodingBarCore
 
@@ -8,6 +9,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let store: UsageStore
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var pulse: PulseLayerView!
+    private var menuWatch: AnyCancellable?
 
     init(store: UsageStore) {
         self.store = store
@@ -20,19 +23,47 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
 
-        // Host the SwiftUI item and let Auto Layout drive the status item's width (true variableLength).
-        let hosting = NSHostingView(rootView: AnyView(StatusItemContentView(store: store)))
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(hosting)
+        // The pulse is AppKit + CALayer, the readout stays SwiftUI. Keeping the animated
+        // glyph out of the NSHostingView is the whole point: a SwiftUI animation in here
+        // re-lays-out the status item every frame. See PulseLayerView for the numbers.
+        let pulse = PulseLayerView()
+        self.pulse = pulse
+        pulse.translatesAutoresizingMaskIntoConstraints = false
+
+        // Concrete root type, not AnyView: type erasure defeats SwiftUI's structural
+        // diffing, so every publish rebuilt the item's tree instead of updating it.
+        let readout = NSHostingView(rootView: StatusItemContentView(store: store))
+        readout.translatesAutoresizingMaskIntoConstraints = false
+
+        button.addSubview(pulse)
+        button.addSubview(readout)
+        // Auto Layout still drives the item's width (true variableLength) — but now only
+        // the readout's text can change it, and that happens on the 30s refresh, not per frame.
         NSLayoutConstraint.activate([
-            hosting.topAnchor.constraint(equalTo: button.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor),
-            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
-            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
+            pulse.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
+            pulse.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            pulse.widthAnchor.constraint(equalToConstant: PulseLayerView.box.width),
+            pulse.heightAnchor.constraint(equalToConstant: PulseLayerView.box.height),
+            readout.leadingAnchor.constraint(equalTo: pulse.trailingAnchor, constant: 6),
+            readout.topAnchor.constraint(equalTo: button.topAnchor),
+            readout.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+            readout.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
         ])
         button.action = #selector(handleClick(_:))
         button.target = self
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+        // objectWillChange fires *before* the value lands, so hop a runloop turn to read
+        // the settled snapshot.
+        syncPulse()
+        menuWatch = store.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.syncPulse() }
+    }
+
+    private func syncPulse() {
+        let m = store.snapshot.menu
+        pulse.update(active: m.active, throughput: m.throughput)
     }
 
     /// Left-click toggles the popover; right-click (or ⌃-click) shows a small menu
@@ -89,6 +120,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 }
 
 // MARK: -
+// Readout only — the glyph is a sibling AppKit view, not part of this tree.
 private struct StatusItemContentView: View {
     @ObservedObject var store: UsageStore
 
@@ -96,6 +128,8 @@ private struct StatusItemContentView: View {
         let s = store.snapshot.menu
         let menu = MenuSummary(metric: store.menuMetric, primaryText: store.primaryText,
                                quotaPercent: s.quotaPercent, active: s.active, throughput: s.throughput)
-        MenuBarItemView(menu: menu)
+        MenuBarReadout(menu: menu)
+            .frame(height: 22)
+            .fixedSize()
     }
 }

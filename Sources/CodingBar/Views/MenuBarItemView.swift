@@ -3,6 +3,10 @@ import AppKit
 import CodingBarCore
 
 // MARK: - The menu bar item: [pulse] 6pt [two-line equal-width number block]
+// This whole-item composition is what the offscreen renderer rasterizes. The live status
+// item builds the same layout out of a `PulseLayerView` plus `MenuBarReadout`, because a
+// SwiftUI animation inside the NSStatusItem costs a full re-layout per frame — see
+// PulseLayerView. Both paths draw from `PulseGlyph`, so they stay the same mark.
 struct MenuBarItemView: View {
     let menu: MenuSummary
 
@@ -10,31 +14,42 @@ struct MenuBarItemView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            PulseIcon(active: menu.active, throughput: menu.throughput)
+            PulseIcon(active: menu.active)
                 // Crisp white on a dark menu bar (black on a light one) — not the
                 // slightly-gray 85%-alpha labelColor. The pulse line follows this
                 // tint; the live dot keeps its own green/gray (liveness, not quota
                 // — quota health stays on the meter + % below).
                 .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
 
-            VStack(alignment: .trailing, spacing: 0) {
-                numberText
-                if let pct = menu.quotaPercent {
-                    // The two lines share one width: a *hidden copy of the number*
-                    // is the width authority (resolved in a single layout pass — no
-                    // GeometryReader/preference feedback that fails to settle), so
-                    // the quota row is proposed the number's full width. The % sits
-                    // at the left edge, the meter's right edge lines up with the
-                    // number's, and the gap between them absorbs the slack.
-                    ZStack(alignment: .leading) {
-                        numberText.hidden()
-                        line2(pct: pct)
-                    }
-                }
-            }
+            MenuBarReadout(menu: menu)
         }
         .frame(height: 22)
         .fixedSize()
+    }
+}
+
+// MARK: - The number block, without the glyph
+struct MenuBarReadout: View {
+    let menu: MenuSummary
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            numberText
+            if let pct = menu.quotaPercent {
+                // The two lines share one width: a *hidden copy of the number*
+                // is the width authority (resolved in a single layout pass — no
+                // GeometryReader/preference feedback that fails to settle), so
+                // the quota row is proposed the number's full width. The % sits
+                // at the left edge, the meter's right edge lines up with the
+                // number's, and the gap between them absorbs the slack.
+                ZStack(alignment: .leading) {
+                    numberText.hidden()
+                    line2(pct: pct)
+                }
+            }
+        }
     }
 
     private var numberText: some View {
