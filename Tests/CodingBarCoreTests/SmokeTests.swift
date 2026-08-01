@@ -296,6 +296,57 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(out.today.files, 1, "the one changed file must be counted once")
     }
 
+    /// `git log --numstat` over 30 days per repo is the most expensive single step in a
+    /// refresh pass — profiled at 951 ms of a ~2 s pass, re-run every 30 seconds to
+    /// rebuild commit history that had not moved. Within the TTL the result must come
+    /// from memory even if the repo gains a commit; past it, the recount must see it.
+    func testGitRangesAreMemoizedWithinTTL() throws {
+        let fm = FileManager.default
+        let repo = fm.temporaryDirectory.appendingPathComponent("repo-\(UUID().uuidString)")
+        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: repo) }
+
+        func git(_ args: [String]) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            p.arguments = ["-C", repo.path] + args
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run(); p.waitUntilExit()
+        }
+        func commit(_ name: String) throws {
+            try "x\n".write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            git(["add", "."])
+            git(["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "-m", name, "--no-gpg-sign"])
+        }
+        git(["init", "-q"])
+        try commit("a.txt")
+
+        // Midday so that advancing past the TTL below cannot cross into the next day,
+        // which would legitimately invalidate the entry for a different reason.
+        let now = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
+        XCTAssertEqual(GitCorrelator.buildRanges(cwds: [repo.path], now: now).today.commits, 1)
+
+        try commit("b.txt")
+        XCTAssertEqual(GitCorrelator.buildRanges(cwds: [repo.path], now: now).today.commits, 1,
+                       "within the TTL the memoized ranges must be reused, not recomputed")
+
+        let later = now.addingTimeInterval(GitCorrelator.rangeTTL + 1)
+        XCTAssertEqual(GitCorrelator.buildRanges(cwds: [repo.path], now: later).today.commits, 2,
+                       "past the TTL the recount must pick up the new commit")
+    }
+
+    /// Aggregator.run() builds a fresh Scanner on every pass, and the on-disk scan cache
+    /// is 10 MB of binary plist here — decoding it per pass cost 745 ms of a ~2 s refresh
+    /// to rebuild state that was already in memory. It must be decoded once per process.
+    func testScannerDecodesDiskCacheOncePerProcess() {
+        _ = Scanner()                       // warm the process-wide store
+        let before = Scanner.diskDecodeCount
+        _ = Scanner(); _ = Scanner(); _ = Scanner()
+        XCTAssertEqual(Scanner.diskDecodeCount, before,
+                       "later Scanners must reuse the in-memory cache, not re-read the file")
+    }
+
     func testGitRenamePathResolution() {
         XCTAssertEqual(GitCorrelator.resolveNumstatPath("src/{old.swift => new.swift}"), "src/new.swift")
         XCTAssertEqual(GitCorrelator.resolveNumstatPath("dir/{old => new}/f.swift"), "dir/new/f.swift")

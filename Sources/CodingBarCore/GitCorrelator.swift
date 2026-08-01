@@ -48,6 +48,15 @@ enum GitCorrelator {
         return top.isEmpty ? nil : top
     }
 
+    /// How long a computed set of ranges stays valid. Commit history cannot move
+    /// meaningfully between 30-second refresh passes, and the recount is the most
+    /// expensive step in one, so it is memoized for a couple of passes at a time.
+    static let rangeTTL: TimeInterval = 120
+
+    /// How many times the ranges were actually recomputed rather than served from
+    /// memory. Test observability.
+    static private(set) var recomputeCount = 0
+
     public struct RangeOutputs: Sendable {
         public var today: OutputStat
         public var week: OutputStat
@@ -62,6 +71,39 @@ enum GitCorrelator {
     /// the top monthly-volume cwds; the `prefix` below is a latency backstop sized
     /// to fit that union without re-truncating today's repos.
     static func buildRanges(cwds: [String], now: Date) -> RangeOutputs {
+        // Keyed on the candidate cwds *and* the day being reported: the outputs are
+        // bucketed relative to midnight, so an entry computed yesterday is wrong today
+        // even inside the TTL.
+        let key = cwds.prefix(20).joined(separator: "\u{0}")
+        let dayStart = Calendar.current.startOfDay(for: now).timeIntervalSince1970
+
+        memoLock.lock()
+        if let m = memo, m.key == key, m.dayStart == dayStart,
+           (0..<rangeTTL).contains(now.timeIntervalSince(m.at)) {
+            memoLock.unlock()
+            return m.value
+        }
+        recomputeCount += 1
+        memoLock.unlock()
+
+        let value = computeRanges(cwds: cwds, now: now)
+
+        memoLock.lock()
+        memo = Memo(key: key, dayStart: dayStart, at: now, value: value)
+        memoLock.unlock()
+        return value
+    }
+
+    private struct Memo {
+        var key: String
+        var dayStart: TimeInterval
+        var at: Date
+        var value: RangeOutputs
+    }
+    private static let memoLock = NSLock()
+    private static var memo: Memo?
+
+    private static func computeRanges(cwds: [String], now: Date) -> RangeOutputs {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: now)
         let todayStart = dayStart.timeIntervalSince1970

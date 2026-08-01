@@ -47,6 +47,25 @@ enum SelfTest {
         let todayModels = snap.overviews.first { $0.range == .today }?.models.count ?? 0
         check("month composition ⊇ today", monthModels >= todayModels)
 
+        // ── Refresh pass reuses work ────────────────────────────────────────────
+        // Both assertions guard a silent regression: the numbers stay correct either
+        // way, the app just goes back to burning a core every 30 seconds.
+        let disk = PerfCounters.scanCacheDiskReads
+        _ = Aggregator.run()
+        check("scan cache decoded once per process, not per pass",
+              PerfCounters.scanCacheDiskReads == disk)
+
+        let probe = "/CodingBar/self-test/not-a-repo"
+        let t = Date()
+        let recomputes = PerfCounters.gitRangeRecomputes
+        PerfCounters.probeGitRanges(at: probe, now: t)
+        PerfCounters.probeGitRanges(at: probe, now: t)
+        check("git ranges memoized within TTL",
+              PerfCounters.gitRangeRecomputes - recomputes == 1)
+        PerfCounters.probeGitRanges(at: probe, now: t.addingTimeInterval(PerfCounters.gitRangeTTL + 1))
+        check("git ranges recomputed past TTL",
+              PerfCounters.gitRangeRecomputes - recomputes == 2)
+
         // ── Quota (offline: credential + response parsing, no network) ──────────
         let claudeCred = CredentialParser.parseClaudeCredentials(
             data: Data(#"{"claudeAiOauth":{"accessToken":"tok","expiresAt":9999999999000}}"#.utf8))
