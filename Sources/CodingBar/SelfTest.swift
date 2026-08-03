@@ -35,6 +35,41 @@ enum SelfTest {
         check("Sonnet 5 standard pricing", abs(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
                                                              at: september, cacheWrite1h: 1_000_000) - 24.3) < 0.000_001)
 
+        // Regression: the family-keyword fallback used to funnel every Opus into 4.8, so a
+        // real `claude-opus-5` record was renamed and merged into the 4.8 row. Each tier
+        // must resolve to itself, and an unrecognized version to the newest — not a pinned
+        // older one, which is how this broke in the first place.
+        check("Opus 5 keeps its own identity",
+              Pricing.normalize(model: "claude-opus-5") == "anthropic/claude-opus-5"
+                  && Pricing.displayName(forCanonicalKey: "anthropic/claude-opus-5") == "Opus 5")
+        check("older Opus tiers still resolve to themselves",
+              Pricing.normalize(model: "claude-opus-4-8") == "anthropic/claude-opus-4-8"
+                  && Pricing.normalize(model: "claude-opus-4-6") == "anthropic/claude-opus-4-6")
+        check("dated Opus 5 variant resolves via the fallback",
+              Pricing.normalize(model: "claude-opus-5-20260315") == "anthropic/claude-opus-5")
+        check("unknown Opus/Sonnet versions resolve to the newest, not a pinned tier",
+              Pricing.normalize(model: "claude-opus-9") == "anthropic/claude-opus-5"
+                  && Pricing.normalize(model: "claude-sonnet-9") == "anthropic/claude-sonnet-5")
+        // "Unknown → newest" is only safe while every *known* tier is enumerated: Opus 4.1
+        // costs 3x the 4.5+ tiers, so falling through to Opus 5 would bill it at a third of
+        // its real rate. Mythos 5 is Fable-tier and would otherwise hit the $3/$15 fallback.
+        check("off-tier Opus versions resolve to themselves, not the newest",
+              Pricing.normalize(model: "claude-opus-4-1-20250805") == "anthropic/claude-opus-4-1"
+                  && Pricing.normalize(model: "claude-opus-4-5-20251101") == "anthropic/claude-opus-4-5")
+        check("Opus 4.1 keeps its 3x rate",
+              abs(Pricing.cost(model: "claude-opus-4-1", tokens: millionTokens, at: july) - 110.25) < 0.000_001)
+        check("Mythos 5 priced at the Fable tier",
+              Pricing.priceIsExact(model: "claude-mythos-5")
+                  && abs(Pricing.cost(model: "claude-mythos-5", tokens: millionTokens, at: july)
+                         - Pricing.cost(model: "claude-fable-5", tokens: millionTokens, at: july)) < 0.000_001)
+        check("bare family selectors mean the current model",
+              Pricing.normalize(model: "opus") == "anthropic/claude-opus-5"
+                  && Pricing.normalize(model: "sonnet") == "anthropic/claude-sonnet-5")
+        // 1M each of input/output/cacheRead/cacheWrite at $5 / $25 / $0.5 / $6.25 = $36.75.
+        check("Opus 5 priced at the Opus tier, not the generic fallback",
+              Pricing.priceIsExact(model: "claude-opus-5")
+                  && abs(Pricing.cost(model: "claude-opus-5", tokens: millionTokens, at: july) - 36.75) < 0.000_001)
+
         let snap = Aggregator.run()
         check("aggregator menu non-empty", !snap.menu.primaryText.isEmpty)
         check("aggregator cost non-negative", snap.overview.spend.cost >= 0)
@@ -130,9 +165,11 @@ enum SelfTest {
               Panel.windowLabel("7d·Fable", lang: .en) == "Fable" && Panel.windowLabel("7d·Fable", lang: .zh) == "Fable")
         check("plain windows keep their localized period label",
               Panel.windowLabel("7d", lang: .en) == "7 days" && Panel.windowLabel("5h", lang: .zh) == "5 小时")
-        check("scoped label still sorts between 5h and the plan-wide 7d",
-              OverviewTab.windowRank("5h") < OverviewTab.windowRank("7d·Fable")
-                  && OverviewTab.windowRank("7d·Fable") < OverviewTab.windowRank("7d"))
+        // Broadest limit first: 5h, then the plan-wide week, then the per-model slices
+        // carved out of it.
+        check("scoped weekly cap sorts under the plan-wide 7d",
+              OverviewTab.windowRank("5h") < OverviewTab.windowRank("7d")
+                  && OverviewTab.windowRank("7d") < OverviewTab.windowRank("7d·Fable"))
 
         // ── Forecast (provider-agnostic: same path for Claude and Codex) ─────────
         let fcCal = Calendar.current
