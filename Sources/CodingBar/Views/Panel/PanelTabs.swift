@@ -21,13 +21,13 @@ struct OverviewTab: View {
 
     /// Fixed display order for quota windows within a provider group.
     static func windowRank(_ label: String) -> Int {
-        switch label {
-        case "5h": return 0
-        case "7d·Opus": return 1
-        case "7d·Sonnet": return 2
-        case "7d": return 3
-        default: return 4
-        }
+        if label == "5h" { return 0 }
+        // All model-scoped weekly caps share one rank so a newly-launched model keeps
+        // the API's own ordering via the caller's stable-index tiebreaker, instead of
+        // dropping to the bottom the way an unenumerated label used to.
+        if label.hasPrefix("7d·") { return 1 }
+        if label == "7d" { return 2 }
+        return 3
     }
 
     var body: some View {
@@ -331,6 +331,10 @@ struct OverviewTab: View {
             .enumerated()
             .sorted { (Self.windowRank($0.element.label), $0.offset) < (Self.windowRank($1.element.label), $1.offset) }
             .map { $0.element }
+        // The plan-wide weekly forecast plus one line per model-scoped window that has
+        // enough history to project (keyed by window id), in the same order as the bars.
+        let forecasts = ([snap.quotaForecast[provider.rawValue]] + windows.map { snap.quotaForecast[$0.id] })
+            .compactMap { $0 }
         if !windows.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
@@ -351,10 +355,14 @@ struct OverviewTab: View {
                 VStack(alignment: .leading, spacing: 0) { ForEach(windows) { windowRow($0) } }
                     .padding(.bottom, 11)
 
-                if let fc = snap.quotaForecast[provider.rawValue] {
-                    HStack(spacing: 6) {
-                        Text("◔").font(.system(size: 11)).foregroundStyle(dc.warn)
-                        Text(fc).font(.system(size: 10)).foregroundStyle(dc.fg2)
+                if !forecasts.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(forecasts, id: \.self) { fc in
+                            HStack(spacing: 6) {
+                                Text("◔").font(.system(size: 11)).foregroundStyle(dc.warn)
+                                Text(fc).font(.system(size: 10)).foregroundStyle(dc.fg2)
+                            }
+                        }
                     }
                     .padding(.bottom, 12)
                 }
@@ -366,8 +374,13 @@ struct OverviewTab: View {
         let used = 1 - w.remaining
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 8) {
+                // 96pt + lineLimit(1): a model-scoped label ("7 days · Sonnet") overflowed
+                // the old 84pt column, and without a line limit SwiftUI wrapped it to a
+                // second (clipped) line — that row alone rendered taller than its
+                // neighbours. The reset caption below pads to match (96 + the 8pt spacing).
                 Text(Panel.windowLabel(w.label, lang: lang)).font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(dc.fg).frame(width: 84, alignment: .leading)
+                    .lineLimit(1)
+                    .foregroundStyle(dc.fg).frame(width: 96, alignment: .leading)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 4).fill(dc.track)
@@ -383,7 +396,7 @@ struct OverviewTab: View {
             .padding(.top, 4)
             Text(Panel.quotaReset(w.resetAt, now: snap.generatedAt, lang: lang))
                 .font(.system(size: 9.5)).foregroundStyle(dc.fg3)
-                .padding(.leading, 92).padding(.bottom, 2)
+                .padding(.leading, 104).padding(.bottom, 2)
         }
     }
 
