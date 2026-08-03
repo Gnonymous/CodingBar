@@ -381,6 +381,64 @@ final class SmokeTests: XCTestCase {
                                     at: september, cacheWrite1h: 1_000_000), 24.3, accuracy: 0.000_001)
     }
 
+    /// `normalize` resolved the Opus family with a bare `contains("opus")` that returned
+    /// 4.8, so every `claude-opus-5` record was renamed and merged into the 4.8 row —
+    /// 11,616 turns and ~$1,127 hidden on one real machine. The *cost* stayed right only
+    /// because both tiers are $5/$25, which is why nothing looked broken. Each tier must
+    /// resolve to itself, and an unknown version to the newest rather than a pinned one.
+    func testEveryModelTierResolvesToItselfAndUnknownsToTheNewest() {
+        for (raw, expected) in [
+            ("claude-opus-5", "anthropic/claude-opus-5"),
+            ("claude-opus-4-8", "anthropic/claude-opus-4-8"),
+            ("claude-opus-4-7", "anthropic/claude-opus-4-7"),
+            ("claude-opus-4-6", "anthropic/claude-opus-4-6"),
+            ("claude-opus-4-5-20251101", "anthropic/claude-opus-4-5"),
+            ("claude-opus-4-1-20250805", "anthropic/claude-opus-4-1"),
+            ("claude-fable-5", "anthropic/claude-fable-5"),
+            ("claude-mythos-5", "anthropic/claude-mythos-5"),
+            ("claude-sonnet-5", "anthropic/claude-sonnet-5"),
+            ("claude-sonnet-4-6", "anthropic/claude-sonnet-4-6"),
+        ] {
+            XCTAssertEqual(Pricing.normalize(model: raw), expected, "\(raw) must keep its own identity")
+        }
+
+        // Dated variants and unrecognized versions route through the family fallback.
+        XCTAssertEqual(Pricing.normalize(model: "claude-opus-5-20260315"), "anthropic/claude-opus-5")
+        XCTAssertEqual(Pricing.normalize(model: "claude-opus-9"), "anthropic/claude-opus-5",
+                       "an unknown Opus must resolve to the newest, not a pinned tier")
+        XCTAssertEqual(Pricing.normalize(model: "claude-sonnet-9"), "anthropic/claude-sonnet-5")
+
+        // The bare selectors Claude Code writes when you pick a family, not a version.
+        XCTAssertEqual(Pricing.normalize(model: "opus"), "anthropic/claude-opus-5")
+        XCTAssertEqual(Pricing.normalize(model: "sonnet"), "anthropic/claude-sonnet-5")
+    }
+
+    /// "Unknown → newest" is only safe while every known tier is enumerated. Opus 4.1 costs
+    /// 3x the 4.5+ tiers and Mythos 5 is Fable-tier, so a missing row for either is not a
+    /// cosmetic gap — it bills real usage at a fraction of its rate, with no visible symptom.
+    func testOffTierModelsAreNotBilledAtTheNewestTiersRate() {
+        let millionTokens = TokenBreakdown(input: 1_000_000, output: 1_000_000,
+                                           cacheRead: 1_000_000, cacheWrite: 1_000_000)
+        let july = Date(timeIntervalSince1970: 1_783_555_200)
+
+        // $5 + $25 + $0.5 + $6.25 = $36.75 (5-minute cache writes).
+        XCTAssertEqual(Pricing.cost(model: "claude-opus-5", tokens: millionTokens, at: july),
+                       36.75, accuracy: 0.000_001)
+        // $15 + $75 + $1.5 + $18.75 = $110.25 — 3x the Opus 5 tier.
+        XCTAssertEqual(Pricing.cost(model: "claude-opus-4-1", tokens: millionTokens, at: july),
+                       110.25, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-mythos-5", tokens: millionTokens, at: july),
+                       Pricing.cost(model: "claude-fable-5", tokens: millionTokens, at: july),
+                       accuracy: 0.000_001, "Mythos 5 shares the Fable 5 tier")
+
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-5"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-4-1"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-mythos-5"))
+
+        XCTAssertEqual(Pricing.displayName(forCanonicalKey: "anthropic/claude-opus-5"), "Opus 5")
+        XCTAssertEqual(Pricing.displayName(forCanonicalKey: "anthropic/claude-mythos-5"), "Mythos 5")
+    }
+
     /// The Codex weekly forecast used to linear-regress across quota *resets*: a 14-day
     /// history is a sawtooth (remaining snaps back to ~1 each week), so the blended slope
     /// flattened and the projected zero landed ~5 days out — then it rendered as a bare
