@@ -108,6 +108,51 @@ public struct ClaudeQuotaFetcher: Sendable {
 
     public static func parse(_ data: Data) -> [QuotaWindow] {
         guard let response = try? JSONDecoder().decode(ClaudeUsageResponse.self, from: data) else { return [] }
+        // `limits` is the current schema and the only place the model-scoped weekly caps
+        // (Fable, Opus, …) still appear — the legacy `seven_day_opus`/`seven_day_sonnet`
+        // fields now come back null even on accounts that have those sub-caps. Merge the
+        // two sources rather than switching between them, deduplicated by label with
+        // `limits` winning: a renamed or newly-added `kind` then degrades to the legacy
+        // tier instead of silently dropping a whole window, and the same window can never
+        // be counted twice (both sources spell each label identically).
+        var windows = parseLimits(response.limits)
+        var seen = Set(windows.map(\.label))
+        for window in parseLegacyTiers(response) where !seen.contains(window.label) {
+            windows.append(window)
+            seen.insert(window.label)
+        }
+        return windows
+    }
+
+    private static func parseLimits(_ limits: [ClaudeUsageLimit]?) -> [QuotaWindow] {
+        guard let limits else { return [] }
+        return limits.compactMap { limit -> QuotaWindow? in
+            guard let label = limitLabel(limit), let percent = limit.percent else { return nil }
+            let remaining = max(0, min(1, 1 - percent / 100))
+            return QuotaWindow(provider: .claude, label: label, remaining: remaining,
+                               resetAt: QuotaHTTP.isoFractional(limit.resetsAt))
+        }
+    }
+
+    /// Window label for one `limits[]` entry, or nil when the entry can't be labelled
+    /// unambiguously. Unknown kinds are dropped rather than rendered under a guessed
+    /// label — an extra bar that silently means something else is worse than a missing one.
+    private static func limitLabel(_ limit: ClaudeUsageLimit) -> String? {
+        guard let kind = limit.kind else { return nil }
+        switch kind {
+        case "session":    return "5h"
+        case "weekly_all": return "7d"
+        case "weekly_scoped":
+            // `scope.model.display_name` names the model the sub-cap covers ("Fable",
+            // "Opus", …); `id` is null in practice, so the display name is the only
+            // handle. Without it the row would render as a second anonymous "7d" bar.
+            guard let name = limit.scope?.model?.displayName, !name.isEmpty else { return nil }
+            return "7d·" + name
+        default: return nil
+        }
+    }
+
+    private static func parseLegacyTiers(_ response: ClaudeUsageResponse) -> [QuotaWindow] {
         let tiers: [(String, ClaudeUsageTier?)] = [
             ("5h", response.fiveHour),
             ("7d", response.sevenDay),
@@ -237,11 +282,13 @@ private struct ClaudeUsageResponse: Decodable {
     let sevenDay: ClaudeUsageTier?
     let sevenDayOpus: ClaudeUsageTier?
     let sevenDaySonnet: ClaudeUsageTier?
+    let limits: [ClaudeUsageLimit]?
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case sevenDayOpus = "seven_day_opus"
         case sevenDaySonnet = "seven_day_sonnet"
+        case limits
     }
 }
 
@@ -252,6 +299,36 @@ private struct ClaudeUsageTier: Decodable {
         case utilization
         case resetsAt = "resets_at"
     }
+}
+
+/// One entry of the current `limits[]` schema. `percent` is utilization (not remaining),
+/// matching the legacy tiers. The sibling `group` / `severity` / `is_active` fields are
+/// deliberately not decoded: severity is recomputed locally from the used fraction, and
+/// nothing in the UI keys off the other two.
+///
+/// `kind` and `percent` are optional even though a real entry always carries both: this
+/// endpoint nulls unpopulated fields liberally (`scope`, `model.id`, `limit_dollars` all
+/// arrive as null), and a non-optional here would throw during array decoding, which
+/// `parse`'s `try?` turns into "no windows at all" — one unexpected null would blank the
+/// 5h and 7d bars too. Entries missing either are dropped individually instead.
+private struct ClaudeUsageLimit: Decodable {
+    let kind: String?
+    let percent: Double?
+    let resetsAt: String?
+    let scope: ClaudeUsageLimitScope?
+    enum CodingKeys: String, CodingKey {
+        case kind, percent, scope
+        case resetsAt = "resets_at"
+    }
+}
+
+private struct ClaudeUsageLimitScope: Decodable {
+    let model: ClaudeUsageLimitModel?
+}
+
+private struct ClaudeUsageLimitModel: Decodable {
+    let displayName: String?
+    enum CodingKeys: String, CodingKey { case displayName = "display_name" }
 }
 
 private struct CodexUsageResponse: Decodable {

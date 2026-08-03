@@ -99,22 +99,30 @@ public enum Forecaster {
         return Insight(kind: .forecast, text: text)
     }
 
-    /// For each provider that has a weekly window, forecast when it depletes.
-    /// Returns `[Provider.rawValue: "<Name> 周额度预计 <when> 见底"]`.
+    /// Forecast when each weekly window depletes — the plan-wide "7d" **and** every
+    /// model-scoped sub-cap ("7d·Fable"), which burns on its own curve and, for a model
+    /// priced well above the plan average, usually empties well before the overall week.
+    /// Keys: `Provider.rawValue` for the plan-wide window, `QuotaWindow.id` for a scoped
+    /// one, so the panel can pin each line to the bar it belongs to.
     /// Reads the history persisted by `recordAndForecast`, so call that first.
     public static func forecastByProvider(quota: [QuotaWindow], now: Date, language: AppLanguage = .en) -> [String: String] {
         let history = loadHistoryLocked()
         var out: [String: String] = [:]
         for provider in [Provider.claude, Provider.codex] {
-            guard let window = quota.first(where: { $0.provider == provider && $0.label == "7d" }) else { continue }
-            let points = history
-                .filter { $0.provider == provider.rawValue && $0.label == "7d" }
-                .sorted { $0.date < $1.date }
-                .map { Point(t: $0.date, r: $0.remaining) }
-            guard let when = predictDepletion(samples: points, resetAt: window.resetAt, now: now) else { continue }
-            let name = provider == .claude ? "Claude" : "Codex"
-            let whenStr = formatDepletion(when, now: now, language: language)
-            out[provider.rawValue] = language.t("\(name) weekly quota runs out \(whenStr)", "\(name) 周额度预计 \(whenStr) 见底")
+            let providerName = provider == .claude ? "Claude" : "Codex"
+            for window in quota where window.provider == provider && window.label.hasPrefix("7d") {
+                let points = history
+                    .filter { $0.provider == provider.rawValue && $0.label == window.label }
+                    .sorted { $0.date < $1.date }
+                    .map { Point(t: $0.date, r: $0.remaining) }
+                guard let when = predictDepletion(samples: points, resetAt: window.resetAt, now: now) else { continue }
+                let whenStr = formatDepletion(when, now: now, language: language)
+                // "7d" → plain provider name; "7d·Fable" → "Claude Fable".
+                let scope = window.label.split(separator: "·").dropFirst().joined(separator: "·")
+                let name = scope.isEmpty ? providerName : providerName + " " + scope
+                let key = scope.isEmpty ? provider.rawValue : window.id
+                out[key] = language.t("\(name) weekly quota runs out \(whenStr)", "\(name) 周额度预计 \(whenStr) 见底")
+            }
         }
         return out
     }

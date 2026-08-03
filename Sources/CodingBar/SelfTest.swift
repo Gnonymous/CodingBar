@@ -87,6 +87,32 @@ enum SelfTest {
         check("claude usage → 3 windows (opus null skipped)", claudeWindows.count == 3)
         check("claude 5h remaining ~0.93", abs((claudeWindows.first?.remaining ?? 0) - 0.93) < 0.0001)
 
+        // Current schema: the model-scoped weekly caps live in `limits[]` and the legacy
+        // `seven_day_opus`/`seven_day_sonnet` fields come back null, so parsing only the
+        // legacy tiers drops the Fable sub-cap entirely.
+        let limitsWindows = ClaudeQuotaFetcher.parse(
+            Data(#"{"five_hour":{"utilization":37.0,"resets_at":"2026-08-03T23:40:00.568125+00:00"},"seven_day":{"utilization":14.0,"resets_at":"2026-08-09T23:00:00.568151+00:00"},"seven_day_opus":null,"seven_day_sonnet":null,"limits":[{"kind":"session","group":"session","percent":37,"resets_at":"2026-08-03T23:40:00.568125+00:00","scope":null,"is_active":true},{"kind":"weekly_all","group":"weekly","percent":14,"resets_at":"2026-08-09T23:00:00.568151+00:00","scope":null,"is_active":false},{"kind":"weekly_scoped","group":"weekly","percent":13,"resets_at":"2026-08-09T23:00:00.568411+00:00","scope":{"model":{"id":null,"display_name":"Fable"},"surface":null},"is_active":false}]}"#.utf8))
+        check("limits[] → 3 windows, no duplicate 5h/7d from legacy tiers", limitsWindows.count == 3)
+        check("limits[] surfaces the Fable weekly sub-cap",
+              limitsWindows.contains { $0.label == "7d·Fable" && abs($0.remaining - 0.87) < 0.0001 })
+        check("limits[] scoped window carries its reset time",
+              limitsWindows.first { $0.label == "7d·Fable" }?.resetAt != nil)
+
+        // An unlabelable scoped entry must be dropped, not rendered as a second bare "7d".
+        let unnamedScope = ClaudeQuotaFetcher.parse(
+            Data(#"{"limits":[{"kind":"weekly_all","percent":10,"resets_at":null,"scope":null},{"kind":"weekly_scoped","percent":50,"resets_at":null,"scope":{"model":{"id":null,"display_name":null}}},{"kind":"future_kind","percent":90,"resets_at":null,"scope":null}]}"#.utf8))
+        check("unnamed scope and unknown kind are dropped",
+              unnamedScope.count == 1 && unnamedScope.first?.label == "7d")
+
+        // A limits[] that loses a window (renamed kind) must fall back to the legacy tier
+        // for it rather than dropping the whole row.
+        let mergedFallback = ClaudeQuotaFetcher.parse(
+            Data(#"{"five_hour":{"utilization":7.0,"resets_at":null},"seven_day":{"utilization":20.0,"resets_at":null},"limits":[{"kind":"weekly_all","percent":14,"resets_at":null,"scope":null}]}"#.utf8))
+        check("legacy tier fills a window missing from limits[]",
+              mergedFallback.count == 2 && mergedFallback.contains { $0.label == "5h" })
+        check("limits[] wins on a label both sources report",
+              abs((mergedFallback.first { $0.label == "7d" }?.remaining ?? 0) - 0.86) < 0.0001)
+
         let codexWindows = CodexQuotaFetcher.parse(
             Data(#"{"rate_limit":{"primary_window":{"used_percent":1,"reset_at":1781674221,"limit_window_seconds":18000},"secondary_window":{"used_percent":74,"reset_at":1781742628,"limit_window_seconds":604800}}}"#.utf8))
         check("codex usage → 2 windows", codexWindows.count == 2)

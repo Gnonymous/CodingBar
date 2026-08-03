@@ -80,9 +80,15 @@ enum Panel {
         switch raw {
         case "5h": return lang.t("5 hours", "5 小时")
         case "7d": return lang.t("7 days", "7 天")
-        case "7d·Opus": return lang.t("7 days · Opus", "7 天 · Opus")
-        case "7d·Sonnet": return lang.t("7 days · Sonnet", "7 天 · Sonnet")
-        default: return raw
+        default:
+            // Model-scoped weekly caps arrive as "7d·<model>", the model name taken
+            // straight from the API (Fable / Opus / …). Format the family generically
+            // rather than enumerating names that change with every model launch.
+            if raw.hasPrefix("7d·") {
+                let scope = String(raw.dropFirst("7d·".count))
+                return lang.t("7 days · \(scope)", "7 天 · \(scope)")
+            }
+            return raw
         }
     }
 }

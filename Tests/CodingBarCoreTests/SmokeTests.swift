@@ -430,6 +430,84 @@ final class SmokeTests: XCTestCase {
                       "3 days out should fall back to the weekday, not today/tomorrow")
     }
 
+    /// The Claude usage endpoint moved its model-scoped weekly caps out of the top-level
+    /// `seven_day_opus` / `seven_day_sonnet` fields (now always null) and into a `limits[]`
+    /// array, where a sub-cap is a `weekly_scoped` entry naming its model. Parsing only the
+    /// legacy tiers therefore dropped the Fable weekly cap on the floor — the panel showed
+    /// 5h and 7d and nothing else. Guards the new path, the legacy fallback, and the merge
+    /// rule that keeps the two from double-counting.
+    func testClaudeQuotaParsesScopedWeeklyLimits() {
+        // Real response shape (2026-08): legacy sub-cap fields null, limits[] carries Fable.
+        let current = ClaudeQuotaFetcher.parse(Data("""
+        {"five_hour":{"utilization":37.0,"resets_at":"2026-08-03T23:40:00.568125+00:00"},
+         "seven_day":{"utilization":14.0,"resets_at":"2026-08-09T23:00:00.568151+00:00"},
+         "seven_day_opus":null,"seven_day_sonnet":null,
+         "limits":[
+           {"kind":"session","group":"session","percent":37,"severity":"normal","resets_at":"2026-08-03T23:40:00.568125+00:00","scope":null,"is_active":true},
+           {"kind":"weekly_all","group":"weekly","percent":14,"severity":"normal","resets_at":"2026-08-09T23:00:00.568151+00:00","scope":null,"is_active":false},
+           {"kind":"weekly_scoped","group":"weekly","percent":13,"severity":"normal","resets_at":"2026-08-09T23:00:00.568411+00:00","scope":{"model":{"id":null,"display_name":"Fable"},"surface":null},"is_active":false}]}
+        """.utf8))
+        XCTAssertEqual(current.map(\.label), ["5h", "7d", "7d·Fable"],
+                       "limits[] must yield all three windows with no duplicates from the legacy tiers")
+        guard let fable = current.first(where: { $0.label == "7d·Fable" }) else {
+            return XCTFail("the Fable weekly sub-cap must survive parsing")
+        }
+        XCTAssertEqual(fable.remaining, 0.87, accuracy: 0.000_001, "percent is utilization, not remaining")
+        XCTAssertNotNil(fable.resetAt)
+        XCTAssertEqual(fable.id, "claude-7d·Fable",
+                       "the id is the forecast key the panel pins a scoped line to")
+
+        // Legacy-only accounts (no limits[] at all) keep working unchanged.
+        let legacy = ClaudeQuotaFetcher.parse(Data(
+            #"{"five_hour":{"utilization":7.0,"resets_at":null},"seven_day":{"utilization":20.0,"resets_at":null},"seven_day_opus":null,"seven_day_sonnet":{"utilization":2.0,"resets_at":null}}"#.utf8))
+        XCTAssertEqual(legacy.map(\.label), ["5h", "7d", "7d·Sonnet"])
+
+        // A limits[] missing a window (renamed kind) falls back to the legacy tier for it
+        // instead of dropping the row; a label both sources report resolves to limits[].
+        let merged = ClaudeQuotaFetcher.parse(Data(
+            #"{"five_hour":{"utilization":7.0,"resets_at":null},"seven_day":{"utilization":20.0,"resets_at":null},"limits":[{"kind":"weekly_all","percent":14,"resets_at":null,"scope":null}]}"#.utf8))
+        XCTAssertEqual(merged.map(\.label).sorted(), ["5h", "7d"])
+        XCTAssertEqual(merged.first { $0.label == "7d" }?.remaining ?? 0, 0.86, accuracy: 0.000_001,
+                       "limits[] wins over the legacy tier for the same label")
+
+        // Entries we can't label unambiguously are dropped, never rendered as a second
+        // anonymous "7d" bar sitting next to the real one.
+        let unlabelable = ClaudeQuotaFetcher.parse(Data(
+            #"{"limits":[{"kind":"weekly_all","percent":10,"resets_at":null,"scope":null},{"kind":"weekly_scoped","percent":50,"resets_at":null,"scope":{"model":{"id":null,"display_name":null}}},{"kind":"future_kind","percent":90,"resets_at":null,"scope":null}]}"#.utf8))
+        XCTAssertEqual(unlabelable.map(\.label), ["7d"])
+    }
+
+    /// A model-scoped weekly cap burns on its own curve — for a model priced above the plan
+    /// average it usually empties well before the overall week — so it needs its own
+    /// depletion line, keyed by window id rather than the shared provider key.
+    func testForecastCoversScopedWeeklyWindowsIndependently() {
+        let cal = Calendar.current
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 24, hour: 12))!
+        let day = 86_400.0, t0 = now.timeIntervalSince1970
+        func pt(_ daysFromNow: Double, _ r: Double) -> (t: Double, r: Double) { (t: t0 + daysFromNow * day, r: r) }
+
+        // Plan-wide week: 1.0 → 0.60 over 6 days ⇒ zero ~9 days out.
+        let planWide = (0...6).map { pt(-6 + Double($0), 1.0 - 0.4 * (Double($0) / 6.0)) }
+        // Scoped cap: 1.0 → 0.10 over the same 6 days ⇒ zero ~16h out, far sooner.
+        let scoped = (0...6).map { pt(-6 + Double($0), 1.0 - 0.9 * (Double($0) / 6.0)) }
+        let resetAt = now.addingTimeInterval(3 * day)
+
+        XCTAssertNil(Forecaster.predictDepletion(samples: planWide, resetAt: resetAt, now: now),
+                     "the plan-wide week resets before it empties — no line")
+        guard let scopedZero = Forecaster.predictDepletion(samples: scoped, resetAt: resetAt, now: now) else {
+            return XCTFail("the scoped cap empties before its reset and must project")
+        }
+        XCTAssertEqual(scopedZero.timeIntervalSince1970, t0 + (2.0 / 3.0) * day, accuracy: 3600)
+
+        // The two windows are distinct history series, so a scoped label can't be folded
+        // into the plan-wide one: QuotaWindow.id is what keeps them apart end-to-end.
+        let planWindow = QuotaWindow(provider: .claude, label: "7d", remaining: 0.6, resetAt: resetAt)
+        let scopedWindow = QuotaWindow(provider: .claude, label: "7d·Fable", remaining: 0.1, resetAt: resetAt)
+        XCTAssertNotEqual(planWindow.id, scopedWindow.id)
+        XCTAssertEqual(scopedWindow.label.split(separator: "·").dropFirst().joined(separator: "·"), "Fable",
+                       "the scope suffix is what names the forecast line (\"Claude Fable\")")
+    }
+
     func testTokenBreakdownMath() {
         var a = TokenBreakdown(input: 10, output: 5, cacheRead: 100)
         a += TokenBreakdown(input: 5, cacheWrite: 20)

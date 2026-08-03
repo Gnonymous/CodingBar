@@ -74,6 +74,7 @@ public extension Snapshot {
             quota: [
                 QuotaWindow(provider: .claude, label: "5h", remaining: 0.88, resetAt: now.addingTimeInterval(2 * 3600 + 12 * 60)),
                 QuotaWindow(provider: .claude, label: "7d", remaining: 0.79, resetAt: now.addingTimeInterval(4 * 86_400)),
+                QuotaWindow(provider: .claude, label: "7d·Fable", remaining: 0.41, resetAt: now.addingTimeInterval(4 * 86_400)),
                 QuotaWindow(provider: .claude, label: "7d·Sonnet", remaining: 0.98, resetAt: now.addingTimeInterval(4 * 86_400)),
                 QuotaWindow(provider: .codex, label: "5h", remaining: 0.99, resetAt: now.addingTimeInterval(3 * 3600)),
                 QuotaWindow(provider: .codex, label: "7d", remaining: 0.26, resetAt: now.addingTimeInterval(86_400)),
@@ -91,6 +92,8 @@ public extension Snapshot {
             burnPerMin: 1.92,
             quotaForecast: [
                 "claude": "Claude weekly quota runs out Wed 15:12",
+                // Scoped windows key on QuotaWindow.id so the panel pins the line to its bar.
+                "claude-7d·Fable": "Claude Fable weekly quota runs out tomorrow 19:40",
                 "codex": "Codex weekly quota runs out tomorrow 08:30",
             ],
             quotaFetchedAt: now.addingTimeInterval(-46),
