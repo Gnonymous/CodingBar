@@ -374,13 +374,13 @@ struct OverviewTab: View {
         let used = 1 - w.remaining
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 8) {
-                // 96pt + lineLimit(1): a model-scoped label ("7 days · Sonnet") overflowed
-                // the old 84pt column, and without a line limit SwiftUI wrapped it to a
-                // second (clipped) line — that row alone rendered taller than its
-                // neighbours. The reset caption below pads to match (96 + the 8pt spacing).
+                // lineLimit(1) is load-bearing: a scoped label is a model name straight
+                // from the API, so an unexpectedly long one must truncate rather than wrap
+                // into a clipped second line, which would render that one row taller than
+                // its neighbours. The reset caption below pads to match (84 + 8pt spacing).
                 Text(Panel.windowLabel(w.label, lang: lang)).font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
-                    .foregroundStyle(dc.fg).frame(width: 96, alignment: .leading)
+                    .foregroundStyle(dc.fg).frame(width: 84, alignment: .leading)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 4).fill(dc.track)
@@ -396,7 +396,7 @@ struct OverviewTab: View {
             .padding(.top, 4)
             Text(Panel.quotaReset(w.resetAt, now: snap.generatedAt, lang: lang))
                 .font(.system(size: 9.5)).foregroundStyle(dc.fg3)
-                .padding(.leading, 104).padding(.bottom, 2)
+                .padding(.leading, 92).padding(.bottom, 2)
         }
     }
 

@@ -122,6 +122,18 @@ enum SelfTest {
         let mixed = claudeWindows + codexWindows
         check("tightestRemaining picks most-depleted", abs((mixed.tightestRemaining ?? 1) - 0.26) < 0.0001)
 
+        // A scoped window renders as the bare model name: it sits above the plan-wide "7
+        // days" row and shares its reset time, so re-stating the period on every scoped
+        // row is redundant. The "7d·" prefix stays in the *label* — it's the forecast key,
+        // the history-sample key and the sort key — so only the display strips it.
+        check("scoped window displays the bare model name",
+              Panel.windowLabel("7d·Fable", lang: .en) == "Fable" && Panel.windowLabel("7d·Fable", lang: .zh) == "Fable")
+        check("plain windows keep their localized period label",
+              Panel.windowLabel("7d", lang: .en) == "7 days" && Panel.windowLabel("5h", lang: .zh) == "5 小时")
+        check("scoped label still sorts between 5h and the plan-wide 7d",
+              OverviewTab.windowRank("5h") < OverviewTab.windowRank("7d·Fable")
+                  && OverviewTab.windowRank("7d·Fable") < OverviewTab.windowRank("7d"))
+
         // ── Forecast (provider-agnostic: same path for Claude and Codex) ─────────
         let fcCal = Calendar.current
         let fcNow = fcCal.date(from: DateComponents(year: 2026, month: 6, day: 24, hour: 12))!  // Wednesday

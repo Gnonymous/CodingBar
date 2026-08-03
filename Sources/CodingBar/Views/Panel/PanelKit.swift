@@ -81,13 +81,12 @@ enum Panel {
         case "5h": return lang.t("5 hours", "5 小时")
         case "7d": return lang.t("7 days", "7 天")
         default:
-            // Model-scoped weekly caps arrive as "7d·<model>", the model name taken
-            // straight from the API (Fable / Opus / …). Format the family generically
-            // rather than enumerating names that change with every model launch.
-            if raw.hasPrefix("7d·") {
-                let scope = String(raw.dropFirst("7d·".count))
-                return lang.t("7 days · \(scope)", "7 天 · \(scope)")
-            }
+            // Model-scoped weekly caps arrive as "7d·<model>" — render just the model
+            // name. The bar sits directly above the plan-wide "7 days" row and shares its
+            // reset time, so the weekly framing is already on screen; prefixing every
+            // scoped row with it again only crowds the label column. The name comes
+            // straight from the API (Fable / Opus / …) and is not localized.
+            if raw.hasPrefix("7d·") { return String(raw.dropFirst("7d·".count)) }
             return raw
         }
     }
