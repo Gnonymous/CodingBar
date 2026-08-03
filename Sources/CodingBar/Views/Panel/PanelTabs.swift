@@ -19,14 +19,17 @@ struct OverviewTab: View {
     private var aggTput: Int { Int(sessions.reduce(0.0) { $0 + $1.throughput }.rounded()) }
     private var tip: Insight? { snap.coach.first { $0.kind == .tip } }
 
-    /// Fixed display order for quota windows within a provider group.
+    /// Fixed display order for quota windows within a provider group: shortest window
+    /// first, then the plan-wide week, then its per-model slices. Reading top-down goes
+    /// from the broadest limit to the narrowest, so a scoped bar sits under the "7 days"
+    /// row it is carved out of rather than above it.
     static func windowRank(_ label: String) -> Int {
         if label == "5h" { return 0 }
+        if label == "7d" { return 1 }
         // All model-scoped weekly caps share one rank so a newly-launched model keeps
         // the API's own ordering via the caller's stable-index tiebreaker, instead of
         // dropping to the bottom the way an unenumerated label used to.
-        if label.hasPrefix("7d·") { return 1 }
-        if label == "7d" { return 2 }
+        if label.hasPrefix("7d·") { return 2 }
         return 3
     }
 
@@ -374,13 +377,13 @@ struct OverviewTab: View {
         let used = 1 - w.remaining
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 8) {
-                // 96pt + lineLimit(1): a model-scoped label ("7 days · Sonnet") overflowed
-                // the old 84pt column, and without a line limit SwiftUI wrapped it to a
-                // second (clipped) line — that row alone rendered taller than its
-                // neighbours. The reset caption below pads to match (96 + the 8pt spacing).
+                // lineLimit(1) is load-bearing: a scoped label is a model name straight
+                // from the API, so an unexpectedly long one must truncate rather than wrap
+                // into a clipped second line, which would render that one row taller than
+                // its neighbours. The reset caption below pads to match (84 + 8pt spacing).
                 Text(Panel.windowLabel(w.label, lang: lang)).font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
-                    .foregroundStyle(dc.fg).frame(width: 96, alignment: .leading)
+                    .foregroundStyle(dc.fg).frame(width: 84, alignment: .leading)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 4).fill(dc.track)
@@ -396,7 +399,7 @@ struct OverviewTab: View {
             .padding(.top, 4)
             Text(Panel.quotaReset(w.resetAt, now: snap.generatedAt, lang: lang))
                 .font(.system(size: 9.5)).foregroundStyle(dc.fg3)
-                .padding(.leading, 104).padding(.bottom, 2)
+                .padding(.leading, 92).padding(.bottom, 2)
         }
     }
 

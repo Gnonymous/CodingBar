@@ -2,8 +2,12 @@ import Foundation
 
 enum Coach {
 
-    // Canonical keys for Opus and Haiku pricing families
+    // Canonical keys for Opus and Haiku pricing families. Every Opus tier belongs here:
+    // a missing one doesn't degrade the tip, it silently excludes that model's turns from
+    // the count entirely, so the advice goes quiet exactly when a new Opus becomes the
+    // model people actually run.
     private static let opusKeys: Set<String> = [
+        "anthropic/claude-opus-5",
         "anthropic/claude-opus-4-8",
         "anthropic/claude-opus-4-7",
         "anthropic/claude-opus-4-6",
@@ -39,7 +43,10 @@ enum Coach {
 
         guard count >= 3 else { return nil }  // not enough to matter
 
-        let opusKey = "anthropic/claude-opus-4-8"
+        // Price the delta off the current Opus, not a pinned older one. Identical numbers
+        // today (both tiers are $5/$25), but this is what keeps the saving honest the next
+        // time the tiers diverge.
+        let opusKey = "anthropic/claude-opus-5"
         let haikuKey = "anthropic/claude-haiku-4-5"
         let opusInputPrice  = Pricing.inputPrice(forCanonicalKey: opusKey)
         let haikuInputPrice = Pricing.inputPrice(forCanonicalKey: haikuKey)
