@@ -19,14 +19,17 @@ struct OverviewTab: View {
     private var aggTput: Int { Int(sessions.reduce(0.0) { $0 + $1.throughput }.rounded()) }
     private var tip: Insight? { snap.coach.first { $0.kind == .tip } }
 
-    /// Fixed display order for quota windows within a provider group.
+    /// Fixed display order for quota windows within a provider group: shortest window
+    /// first, then the plan-wide week, then its per-model slices. Reading top-down goes
+    /// from the broadest limit to the narrowest, so a scoped bar sits under the "7 days"
+    /// row it is carved out of rather than above it.
     static func windowRank(_ label: String) -> Int {
         if label == "5h" { return 0 }
+        if label == "7d" { return 1 }
         // All model-scoped weekly caps share one rank so a newly-launched model keeps
         // the API's own ordering via the caller's stable-index tiebreaker, instead of
         // dropping to the bottom the way an unenumerated label used to.
-        if label.hasPrefix("7d·") { return 1 }
-        if label == "7d" { return 2 }
+        if label.hasPrefix("7d·") { return 2 }
         return 3
     }
 
