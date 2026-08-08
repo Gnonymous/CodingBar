@@ -232,7 +232,7 @@ public enum Aggregator {
             primaryText = "\(totalTodayTokens)"
         }
 
-        // Menu bar shows one window (the user's preferred provider, else Claude 5h).
+        // Menu bar shows the selected provider's canonical window, with a cross-provider fallback.
         // quotaPercent is the *remaining* fraction (drives bar fill + color); the view
         // renders it as "used %".
         let quotaPercent: Double? = quota.menuWindow(preferring: menuQuotaProvider)?.remaining

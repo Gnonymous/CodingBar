@@ -153,6 +153,13 @@ enum SelfTest {
         check("codex usage → 2 windows", codexWindows.count == 2)
         check("codex secondary labelled 7d", codexWindows.last?.label == "7d")
         check("codex 7d remaining ~0.26", abs((codexWindows.last?.remaining ?? 0) - 0.26) < 0.0001)
+        check("codex menu quota uses weekly window",
+              codexWindows.menuWindow(preferring: .codex)?.label == "7d")
+        let codexFiveHourOnly = [QuotaWindow(provider: .codex, label: "5h", remaining: 0.91, resetAt: nil)]
+        let canonicalFallback = [QuotaWindow(provider: .claude, label: "5h", remaining: 0.72, resetAt: nil)] + codexFiveHourOnly
+        check("codex menu quota never falls back to 5h",
+              codexFiveHourOnly.menuWindow(preferring: .codex) == nil
+                  && canonicalFallback.menuWindow(preferring: .codex)?.provider == .claude)
 
         let mixed = claudeWindows + codexWindows
         check("tightestRemaining picks most-depleted", abs((mixed.tightestRemaining ?? 1) - 0.26) < 0.0001)

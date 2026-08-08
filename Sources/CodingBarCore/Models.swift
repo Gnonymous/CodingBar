@@ -81,24 +81,25 @@ public extension Array where Element == QuotaWindow {
     /// The most-depleted window's remaining fraction, nil when there is no data.
     var tightestRemaining: Double? { map(\.remaining).min() }
 
-    /// The single window surfaced in the menu bar: Claude 5h preferred, else
-    /// Codex 5h, else the most-depleted window. Keeps the menu bar meaning one
-    /// fixed, predictable thing ("how much of my Claude 5h window is used").
+    /// The single window surfaced in the menu bar: Claude 5h preferred, else Codex
+    /// 7d. Only these canonical limits are eligible because the menu bar has no label
+    /// that could honestly explain an arbitrary fallback window.
     var menuWindow: QuotaWindow? {
         first { $0.provider == .claude && $0.label == "5h" }
-            ?? first { $0.provider == .codex && $0.label == "5h" }
-            ?? self.min { $0.remaining < $1.remaining }
+            ?? first { $0.provider == .codex && $0.label == "7d" }
     }
 
-    /// Menu-bar window honoring the user's preferred provider: that provider's 5h
-    /// window, else its most-depleted window. Falls back to the default `menuWindow`
-    /// chain when the preferred provider has no data (so a Claude-only or Codex-only
-    /// user still sees something). `nil` preference → the default chain.
+    /// Menu-bar window honoring the user's preferred provider: Claude's 5h or Codex's
+    /// 7d window. If that canonical window is unavailable, falls back to the other
+    /// provider's canonical window; `nil` preference uses the default chain.
     func menuWindow(preferring provider: Provider?) -> QuotaWindow? {
         guard let provider else { return menuWindow }
-        let preferred = first { $0.provider == provider && $0.label == "5h" }
-            ?? filter { $0.provider == provider }.min { $0.remaining < $1.remaining }
-        return preferred ?? menuWindow
+        let label: String
+        switch provider {
+        case .claude: label = "5h"
+        case .codex: label = "7d"
+        }
+        return first { $0.provider == provider && $0.label == label } ?? menuWindow
     }
 }
 

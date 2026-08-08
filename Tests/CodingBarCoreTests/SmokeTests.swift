@@ -535,6 +535,27 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(unlabelable.map(\.label), ["7d"])
     }
 
+    func testCodexMenuQuotaUsesWeeklyWindow() {
+        let windows = [
+            QuotaWindow(provider: .codex, label: "5h", remaining: 0.91, resetAt: nil),
+            QuotaWindow(provider: .codex, label: "7d", remaining: 0.26, resetAt: nil),
+        ]
+
+        XCTAssertEqual(windows.menuWindow(preferring: .codex)?.label, "7d")
+    }
+
+    func testCodexMenuQuotaNeverFallsBackToFiveHourWindow() {
+        let codexFiveHourOnly = [
+            QuotaWindow(provider: .codex, label: "5h", remaining: 0.91, resetAt: nil),
+        ]
+        XCTAssertNil(codexFiveHourOnly.menuWindow(preferring: .codex))
+
+        let withClaude = [
+            QuotaWindow(provider: .claude, label: "5h", remaining: 0.72, resetAt: nil),
+        ] + codexFiveHourOnly
+        XCTAssertEqual(withClaude.menuWindow(preferring: .codex)?.provider, .claude)
+    }
+
     /// A model-scoped weekly cap burns on its own curve — for a model priced above the plan
     /// average it usually empties well before the overall week — so it needs its own
     /// depletion line, keyed by window id rather than the shared provider key.
