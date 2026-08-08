@@ -59,7 +59,7 @@ struct MenuBarReadout: View {
             .fixedSize()
     }
 
-    // `pct` is the remaining fraction of the menu window (Claude 5h). We render it
+    // `pct` is the remaining fraction of the selected menu-bar quota window. We render it
     // as *used %* per user preference; the 4-cell meter lights up with usage and is
     // colored by health (low usage = green, high usage = red). The Spacer expands
     // to fill the shared width, so the meter stays flush with the number's edge.
