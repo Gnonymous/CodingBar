@@ -82,12 +82,16 @@ enum Coach {
             totalWrite += r.tokens.cacheWrite
             totalRead += r.tokens.cacheRead
             let key = Pricing.normalize(model: r.model)
-            let writePrice = Pricing.inputPrice(forCanonicalKey: key, at: r.timestamp)
-            let readPrice = Pricing.cacheReadPrice(forCanonicalKey: key, at: r.timestamp)
+            let promptTokens = r.billingInputTokens ?? (r.tokens.input + r.tokens.cacheRead + r.tokens.cacheWrite)
+            let writePrice = Pricing.inputPrice(forCanonicalKey: key, at: r.timestamp,
+                                                billingInputTokens: promptTokens)
+            let readPrice = Pricing.cacheReadPrice(forCanonicalKey: key, at: r.timestamp,
+                                                   billingInputTokens: promptTokens)
             totalWriteCost += Pricing.cost(model: r.model,
                                             tokens: TokenBreakdown(cacheWrite: r.tokens.cacheWrite),
                                             at: r.timestamp,
-                                            cacheWrite1h: r.cacheWrite1h)
+                                            cacheWrite1h: r.cacheWrite1h,
+                                            billingInputTokens: promptTokens)
             totalReadSavings += Double(r.tokens.cacheRead) * (writePrice - readPrice) / 1_000_000
         }
 
