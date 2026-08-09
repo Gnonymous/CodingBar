@@ -35,6 +35,32 @@ enum SelfTest {
         check("Sonnet 5 standard pricing", abs(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
                                                              at: september, cacheWrite1h: 1_000_000) - 24.3) < 0.000_001)
 
+        let openAIBaseTokens = TokenBreakdown(input: 100_000, output: 100_000,
+                                              cacheRead: 100_000, cacheWrite: 100_000)
+        check("GPT-5.6 tiers resolve exactly",
+              Pricing.normalize(model: "gpt-5.6") == "openai/gpt-5.6-sol"
+                  && Pricing.normalize(model: "gpt-5.6-sol") == "openai/gpt-5.6-sol"
+                  && Pricing.normalize(model: "gpt-5.6-terra") == "openai/gpt-5.6-terra"
+                  && Pricing.normalize(model: "gpt-5.6-luna") == "openai/gpt-5.6-luna"
+                  && Pricing.priceIsExact(model: "gpt-5.6"))
+        check("GPT-5.6 Sol base and long-context pricing",
+              abs(Pricing.cost(model: "gpt-5.6-sol", tokens: openAIBaseTokens, at: july,
+                               billingInputTokens: 272_000) - 4.175) < 0.000_001
+                  && abs(Pricing.cost(model: "gpt-5.6-sol", tokens: openAIBaseTokens, at: july,
+                                      billingInputTokens: 272_001) - 6.85) < 0.000_001)
+        check("GPT prices cover current and historical IDs",
+              abs(Pricing.cost(model: "gpt-5.4-mini", tokens: TokenBreakdown(output: 1_000_000),
+                               at: july) - 4.5) < 0.000_001
+                  && abs(Pricing.cost(model: "gpt-5.3-codex", tokens: TokenBreakdown(output: 1_000_000),
+                                      at: july) - 14) < 0.000_001
+                  && Pricing.priceIsExact(model: "gpt-5.1")
+                  && Pricing.priceIsExact(model: "gpt-4o-mini")
+                  && Pricing.normalize(model: "gpt-5.4-nano-2026-03-17") == "openai/gpt-5.4-nano")
+        check("unknown Codex IDs remain approximate",
+              Pricing.normalize(model: "gpt-5.6-codex") == "gpt-5.6-codex"
+                  && !Pricing.priceIsExact(model: "gpt-5.6-codex")
+                  && !Pricing.priceIsExact(model: "gpt-5.5-codex"))
+
         // Regression: the family-keyword fallback used to funnel every Opus into 4.8, so a
         // real `claude-opus-5` record was renamed and merged into the 4.8 row. Each tier
         // must resolve to itself, and an unrecognized version to the newest — not a pinned

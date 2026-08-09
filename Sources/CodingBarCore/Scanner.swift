@@ -23,6 +23,9 @@ struct RawRecord {
     /// Portion of `tokens.cacheWrite` created with Claude's 1-hour cache TTL.
     /// The remainder is the 5-minute default cache write tier.
     var cacheWrite1h: Int = 0
+    /// Absolute prompt size used only to choose a provider's long-context price tier.
+    /// Nil for Claude because its TokenBreakdown already carries the absolute prompt.
+    var billingInputTokens: Int? = nil
     var toolName: String?       // first tool in this turn (backwards compat)
     var toolNames: [String]     // ALL tool_use names in this turn
     var messageId: String?
@@ -77,8 +80,10 @@ final class Scanner {
     /// the `attribution*` fields (skill / agent / plugin / MCP server). v5: cache moved
     /// from JSON to binary property list (smaller, decodes without an NSDictionary tree
     /// intermediate — see loadCache for the peak-memory rationale). v6: Claude records
-    /// preserve the 1-hour prompt-cache portion for duration-aware billing.
-    private static let cacheVersion = 6
+    /// preserve the 1-hour prompt-cache portion for duration-aware billing. v7: Codex
+    /// records preserve the absolute last-turn input size for long-context pricing. v8:
+    /// Codex cache-write tokens are split from fresh input instead of being discarded.
+    private static let cacheVersion = 8
 
     private struct CacheFile: Codable {
         var version: Int
@@ -96,6 +101,7 @@ final class Scanner {
         var cacheRead: Int
         var cacheWrite: Int
         var cacheWrite1h: Int
+        var billingInputTokens: Int?
         var reasoning: Int
         var toolName: String?
         var toolNames: [String]
@@ -191,6 +197,7 @@ final class Scanner {
             cwd: cached.cwd,
             tokens: TokenBreakdown(input: cached.input, output: cached.output, cacheRead: cached.cacheRead, cacheWrite: cached.cacheWrite, reasoning: cached.reasoning),
             cacheWrite1h: cached.cacheWrite1h,
+            billingInputTokens: cached.billingInputTokens,
             toolName: cached.toolName,
             toolNames: cached.toolNames,
             messageId: cached.messageId,
@@ -211,6 +218,7 @@ final class Scanner {
             cacheRead: raw.tokens.cacheRead,
             cacheWrite: raw.tokens.cacheWrite,
             cacheWrite1h: raw.cacheWrite1h,
+            billingInputTokens: raw.billingInputTokens,
             reasoning: raw.tokens.reasoning,
             toolName: raw.toolName,
             toolNames: raw.toolNames,

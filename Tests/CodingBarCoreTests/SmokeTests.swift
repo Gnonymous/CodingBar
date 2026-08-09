@@ -129,20 +129,21 @@ final class SmokeTests: XCTestCase {
         func line(_ obj: [String: Any]) -> String {
             String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
         }
-        func tc(ts: String, input: Int, cached: Int, output: Int) -> [String: Any] {
+        func tc(ts: String, input: Int, cached: Int, cacheWrite: Int = 0, output: Int) -> [String: Any] {
             ["type": "event_msg", "timestamp": ts,
              "payload": ["type": "token_count",
                          "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": cached,
+                                                        "cache_write_input_tokens": cacheWrite,
                                                         "output_tokens": output, "reasoning_output_tokens": 0]]]]
         }
         let lines = [
             line(["type": "session_meta", "payload": ["cwd": "/tmp/proj"]]),
             line(["type": "turn_context", "payload": ["model": "gpt-5.5-codex"]]),
-            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, cached: 0,  output: 10)), // A
-            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, cached: 0,  output: 10)), // dup → skip
-            line(tc(ts: "2026-06-18T13:05:00.000Z", input: 300, cached: 50, output: 30)), // C: Δ net150 cache50 out20
-            line(tc(ts: "garbage",                  input: 450, cached: 50, output: 40)), // bad ts → drop, baseline→450
-            line(tc(ts: "2026-06-18T13:10:00.000Z", input: 600, cached: 50, output: 50)), // E: Δ net150 cache0 out10
+            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, cached: 0,  cacheWrite: 20, output: 10)), // A: fresh80 write20
+            line(tc(ts: "2026-06-18T13:00:00.000Z", input: 100, cached: 0,  cacheWrite: 20, output: 10)), // dup → skip
+            line(tc(ts: "2026-06-18T13:05:00.000Z", input: 300, cached: 50, cacheWrite: 40, output: 30)), // C: Δ fresh130 read50 write20 out20
+            line(tc(ts: "garbage",                  input: 450, cached: 50, cacheWrite: 40, output: 40)), // bad ts → drop, baseline→450
+            line(tc(ts: "2026-06-18T13:10:00.000Z", input: 600, cached: 50, cacheWrite: 50, output: 50)), // E: Δ fresh140 write10 out10
         ]
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
         try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
@@ -150,10 +151,44 @@ final class SmokeTests: XCTestCase {
 
         let records = CodexScanner.parseFile(url)
         XCTAssertEqual(records.count, 3, "duplicate must be skipped and the bad-timestamp record dropped")
-        XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.input }, 100 + 150 + 150)     // net input
+        XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.input }, 80 + 130 + 140)
         XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.cacheRead }, 0 + 50 + 0)
+        XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.cacheWrite }, 20 + 20 + 10)
         XCTAssertEqual(records.reduce(0) { $0 + $1.tokens.output }, 10 + 20 + 10)
         XCTAssertEqual(records.first?.model, "gpt-5.5-codex")
+    }
+
+    func testCodexScannerSeparatesReasoningAndPreservesBillingContext() throws {
+        let event: [String: Any] = [
+            "type": "event_msg", "timestamp": "2026-08-09T13:00:00.000Z",
+            "payload": ["type": "token_count", "info": [
+                "total_token_usage": [
+                    "input_tokens": 300_000, "cached_input_tokens": 100_000,
+                    "cache_write_input_tokens": 50_000,
+                    "output_tokens": 100, "reasoning_output_tokens": 40,
+                ],
+                "last_token_usage": ["input_tokens": 300_001],
+            ]],
+        ]
+        let lines = [
+            ["type": "turn_context", "payload": ["model": "gpt-5.6-sol"]],
+            event,
+        ]
+        let data = try lines.map {
+            String(data: try JSONSerialization.data(withJSONObject: $0), encoding: .utf8)!
+        }.joined(separator: "\n").data(using: .utf8)!
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let record = try XCTUnwrap(CodexScanner.parseFile(url).first)
+        XCTAssertEqual(record.tokens.input, 150_000)
+        XCTAssertEqual(record.tokens.cacheRead, 100_000)
+        XCTAssertEqual(record.tokens.cacheWrite, 50_000)
+        XCTAssertEqual(record.tokens.output, 60, "output_tokens already contains reasoning")
+        XCTAssertEqual(record.tokens.reasoning, 40)
+        XCTAssertEqual(record.tokens.total, 300_100)
+        XCTAssertEqual(record.billingInputTokens, 300_001)
     }
 
     /// Codex `function_call` items (exec_command, view_image, …) buffered before a
@@ -218,6 +253,30 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(recs[1].attribution.mcpServer, "playwright")
         XCTAssertEqual(recs[2].attribution.agent, "general-purpose")
         XCTAssertTrue(recs[3].attribution.isEmpty)
+    }
+
+    func testClaudeScannerPreservesGPTModelAndUsage() throws {
+        let record: [String: Any] = [
+            "type": "assistant", "timestamp": "2026-08-09T13:00:00.000Z", "cwd": "/p",
+            "message": [
+                "id": "gpt-turn", "model": "gpt-5.6-sol", "content": [],
+                "usage": [
+                    "input_tokens": 100, "output_tokens": 10,
+                    "cache_read_input_tokens": 250_000, "cache_creation_input_tokens": 30_000,
+                ],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: record)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parsed = try XCTUnwrap(ClaudeScanner.parseFile(url).first)
+        XCTAssertEqual(parsed.provider, .claude)
+        XCTAssertEqual(parsed.model, "gpt-5.6-sol")
+        XCTAssertEqual(parsed.tokens, TokenBreakdown(input: 100, output: 10,
+                                                      cacheRead: 250_000, cacheWrite: 30_000))
+        XCTAssertNil(parsed.billingInputTokens, "Claude prompt size is derived from its absolute usage fields")
     }
 
     func testClaudeScannerPreservesOneHourCacheWrites() throws {
@@ -359,9 +418,11 @@ final class SmokeTests: XCTestCase {
     func testPriceIsExactFlagsOnlyFallbackModels() {
         XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-4-8"))
         XCTAssertTrue(Pricing.priceIsExact(model: "claude-sonnet-5"))
-        XCTAssertTrue(Pricing.priceIsExact(model: "gpt-5.5-codex"))
-        XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.1"))                 // no table/family match
-        XCTAssertFalse(Pricing.priceIsExact(model: "totally-unknown-model"))  // generic fallback rate
+        XCTAssertTrue(Pricing.priceIsExact(model: "gpt-5.6-sol"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "openrouter/openai/gpt-5.4-mini"))
+        XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.5-codex"))          // observed alias, family estimate
+        XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.6-codex"))          // unknown model, generic fallback
+        XCTAssertFalse(Pricing.priceIsExact(model: "totally-unknown-model"))
     }
 
     func testPricingUsesCacheDurationAndSonnetFiveEffectiveDates() {
@@ -379,6 +440,127 @@ final class SmokeTests: XCTestCase {
                                     at: july, cacheWrite1h: 1_000_000), 16.2, accuracy: 0.000_001)
         XCTAssertEqual(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
                                     at: september, cacheWrite1h: 1_000_000), 24.3, accuracy: 0.000_001)
+    }
+
+    func testOpenAIModelPricesAndAliasesMatchCurrentTable() {
+        let date = Date(timeIntervalSince1970: 1_786_233_600)  // 2026-08-09 UTC
+        let hundredK = 100_000
+        let cases: [(raw: String, canonical: String, input: Double, cached: Double, output: Double)] = [
+            ("gpt-5.6-sol", "openai/gpt-5.6-sol", 5, 0.5, 30),
+            ("gpt-5.6-terra", "openai/gpt-5.6-terra", 2, 0.2, 12),
+            ("gpt-5.6-luna", "openai/gpt-5.6-luna", 0.2, 0.02, 1.2),
+            ("gpt-5.5", "openai/gpt-5.5", 5, 0.5, 30),
+            ("gpt-5.5-pro", "openai/gpt-5.5-pro", 30, 30, 180),
+            ("gpt-5.4", "openai/gpt-5.4", 2.5, 0.25, 15),
+            ("gpt-5.4-pro", "openai/gpt-5.4-pro", 30, 30, 180),
+            ("gpt-5.4-mini", "openai/gpt-5.4-mini", 0.75, 0.075, 4.5),
+            ("gpt-5.4-nano", "openai/gpt-5.4-nano", 0.2, 0.02, 1.25),
+            ("gpt-5.3-codex", "openai/gpt-5.3-codex", 1.75, 0.175, 14),
+            ("gpt-5.2", "openai/gpt-5.2", 1.75, 0.175, 14),
+            ("gpt-5.2-pro", "openai/gpt-5.2-pro", 21, 21, 168),
+            ("gpt-5.2-codex", "openai/gpt-5.2-codex", 1.75, 0.175, 14),
+            ("gpt-5.1", "openai/gpt-5.1", 1.25, 0.125, 10),
+            ("gpt-5.1-codex", "openai/gpt-5.1-codex", 1.25, 0.125, 10),
+            ("gpt-5.1-codex-max", "openai/gpt-5.1-codex-max", 1.25, 0.125, 10),
+            ("gpt-5.1-codex-mini", "openai/gpt-5.1-codex-mini", 0.25, 0.025, 2),
+            ("gpt-5", "openai/gpt-5", 1.25, 0.125, 10),
+            ("gpt-5-pro", "openai/gpt-5-pro", 15, 15, 120),
+            ("gpt-5-mini", "openai/gpt-5-mini", 0.25, 0.025, 2),
+            ("gpt-5-nano", "openai/gpt-5-nano", 0.05, 0.005, 0.4),
+            ("gpt-5-codex", "openai/gpt-5-codex", 1.25, 0.125, 10),
+            ("codex-mini-latest", "openai/codex-mini-latest", 1.5, 0.375, 6),
+            ("gpt-4.1", "openai/gpt-4.1", 2, 0.5, 8),
+            ("gpt-4.1-mini", "openai/gpt-4.1-mini", 0.4, 0.1, 1.6),
+            ("gpt-4.1-nano", "openai/gpt-4.1-nano", 0.1, 0.025, 0.4),
+            ("gpt-4o", "openai/gpt-4o", 2.5, 1.25, 10),
+            ("gpt-4o-mini", "openai/gpt-4o-mini", 0.15, 0.075, 0.6),
+            ("o3-pro", "openai/o3-pro", 20, 20, 80),
+            ("o3", "openai/o3", 2, 0.5, 8),
+            ("o4-mini", "openai/o4-mini", 1.1, 0.275, 4.4),
+            ("o1-pro", "openai/o1-pro", 150, 150, 600),
+            ("o1", "openai/o1", 15, 7.5, 60),
+            ("o1-mini", "openai/o1-mini", 1.1, 0.55, 4.4),
+            ("o3-mini", "openai/o3-mini", 1.1, 0.55, 4.4),
+        ]
+
+        for c in cases {
+            XCTAssertEqual(Pricing.normalize(model: c.raw), c.canonical, c.raw)
+            XCTAssertTrue(Pricing.priceIsExact(model: c.raw), c.raw)
+            XCTAssertEqual(Pricing.cost(model: c.raw, tokens: .init(input: hundredK), at: date,
+                                        billingInputTokens: hundredK), c.input / 10, accuracy: 0.000_001, c.raw)
+            XCTAssertEqual(Pricing.cost(model: c.raw, tokens: .init(cacheRead: hundredK), at: date,
+                                        billingInputTokens: hundredK), c.cached / 10, accuracy: 0.000_001, c.raw)
+            XCTAssertEqual(Pricing.cost(model: c.raw, tokens: .init(output: hundredK), at: date,
+                                        billingInputTokens: hundredK), c.output / 10, accuracy: 0.000_001, c.raw)
+        }
+
+        XCTAssertEqual(Pricing.normalize(model: "gpt-5.6"), "openai/gpt-5.6-sol")
+        XCTAssertTrue(Pricing.priceIsExact(model: "gpt-5.6"))
+        XCTAssertEqual(Pricing.normalize(model: "openrouter/openai/gpt-5.6-sol"), "openai/gpt-5.6-sol")
+        XCTAssertEqual(Pricing.normalize(model: "my-sonnet-proxy/gpt-5.5"), "openai/gpt-5.5")
+        for (snapshot, canonical) in [
+            "gpt-5.5-2026-04-23": "openai/gpt-5.5",
+            "gpt-5.5-pro-2026-04-23": "openai/gpt-5.5-pro",
+            "gpt-5.4-2026-03-05": "openai/gpt-5.4",
+            "gpt-5.4-pro-2026-03-05": "openai/gpt-5.4-pro",
+            "gpt-5.4-mini-2026-03-17": "openai/gpt-5.4-mini",
+            "gpt-5.4-nano-2026-03-17": "openai/gpt-5.4-nano",
+            "gpt-5.2-2025-12-11": "openai/gpt-5.2",
+            "gpt-5.2-pro-2025-12-11": "openai/gpt-5.2-pro",
+            "gpt-5.1-2025-11-13": "openai/gpt-5.1",
+            "gpt-5-2025-08-07": "openai/gpt-5",
+            "gpt-5-pro-2025-10-06": "openai/gpt-5-pro",
+            "gpt-5-mini-2025-08-07": "openai/gpt-5-mini",
+            "gpt-5-nano-2025-08-07": "openai/gpt-5-nano",
+            "gpt-4o-2024-11-20": "openai/gpt-4o",
+        ] {
+            XCTAssertEqual(Pricing.normalize(model: snapshot), canonical, snapshot)
+            XCTAssertTrue(Pricing.priceIsExact(model: snapshot), snapshot)
+        }
+        XCTAssertEqual(Pricing.normalize(model: "gpt-5.6-codex"), "gpt-5.6-codex")
+    }
+
+    func testOpenAILongContextAndCacheWritePricing() {
+        let date = Date(timeIntervalSince1970: 1_786_233_600)
+        let tokens = TokenBreakdown(input: 100_000, output: 100_000,
+                                    cacheRead: 100_000, cacheWrite: 100_000)
+
+        XCTAssertEqual(Pricing.cost(model: "gpt-5.6-sol", tokens: tokens, at: date,
+                                    billingInputTokens: 272_000), 4.175, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "gpt-5.6-sol", tokens: tokens, at: date,
+                                    billingInputTokens: 272_001), 6.85, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "gpt-5.4-mini", tokens: tokens, at: date,
+                                    billingInputTokens: 500_000), 0.5325, accuracy: 0.000_001,
+                       "models without a long-context surcharge must keep their base price")
+    }
+
+    func testLiveBurnUsesCodexAbsolutePromptForLongContextPricing() {
+        let now = Date(timeIntervalSince1970: 1_786_233_600)
+        let record = RawRecord(
+            provider: .codex, model: "gpt-5.6-sol", timestamp: now, cwd: "/p",
+            tokens: TokenBreakdown(input: 10_000, output: 200),
+            billingInputTokens: 300_001,
+            toolName: nil, toolNames: [], messageId: nil,
+            sessionKey: "codex-live", hasInterrupt: false
+        )
+        let result = FuelCalculator.liveSessions(claudeRecords: [], codexRecords: [record], now: now)
+        let expected = Pricing.cost(model: record.model, tokens: record.tokens, at: now,
+                                    billingInputTokens: record.billingInputTokens)
+        XCTAssertEqual(result.burnPerMin, expected, accuracy: 0.000_001)
+    }
+
+    func testCacheStatsIncludeCodexAndLongContextSavings() {
+        let now = Date(timeIntervalSince1970: 1_786_233_600)
+        let record = RawRecord(
+            provider: .codex, model: "gpt-5.6-terra", timestamp: now, cwd: "/p",
+            tokens: TokenBreakdown(input: 100_000, cacheRead: 900_000),
+            billingInputTokens: 300_001,
+            toolName: nil, toolNames: [], messageId: nil,
+            sessionKey: "codex-cache", hasInterrupt: false
+        )
+        let cache = Aggregator.cacheStat(from: [record])
+        XCTAssertEqual(cache.hitRate, 0.9, accuracy: 0.000_001)
+        XCTAssertEqual(cache.savedUSD, 3.24, accuracy: 0.000_001)
     }
 
     /// `normalize` resolved the Opus family with a bare `contains("opus")` that returned

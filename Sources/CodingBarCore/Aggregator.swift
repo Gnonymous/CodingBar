@@ -2,6 +2,32 @@ import Foundation
 
 public enum Aggregator {
 
+    /// Cache stats span every local provider because the UI presents one all-time total.
+    /// Keeping this pure also pins the pricing semantics without scanning real user logs.
+    static func cacheStat(from records: [RawRecord]) -> CacheStat {
+        var totalCacheRead = 0
+        var totalCacheWrite = 0
+        var totalInput = 0
+        var totalSavedWeightedRead = 0.0
+
+        for r in records {
+            totalCacheRead += r.tokens.cacheRead
+            totalCacheWrite += r.tokens.cacheWrite
+            totalInput += r.tokens.input
+            let key = Pricing.normalize(model: r.model)
+            let promptTokens = r.billingInputTokens ?? (r.tokens.input + r.tokens.cacheRead + r.tokens.cacheWrite)
+            let inputPrice = Pricing.inputPrice(forCanonicalKey: key, at: r.timestamp,
+                                                billingInputTokens: promptTokens)
+            let cacheReadPrice = Pricing.cacheReadPrice(forCanonicalKey: key, at: r.timestamp,
+                                                        billingInputTokens: promptTokens)
+            totalSavedWeightedRead += Double(r.tokens.cacheRead) * (inputPrice - cacheReadPrice)
+        }
+
+        let denominator = totalCacheRead + totalCacheWrite + totalInput
+        let hitRate = denominator > 0 ? Double(totalCacheRead) / Double(denominator) : 0
+        return CacheStat(hitRate: hitRate, savedUSD: totalSavedWeightedRead / 1_000_000)
+    }
+
     /// `quota` is supplied by the online `QuotaService` (Claude + Codex usage
     /// APIs). It is a parameter rather than scanned here so the local-log
     /// aggregation stays synchronous and offline; the UI injects the latest
@@ -20,7 +46,8 @@ public enum Aggregator {
         let allRecords = claudeRecords + codexRecords
         func recordCost(_ record: RawRecord) -> Double {
             Pricing.cost(model: record.model, tokens: record.tokens,
-                         at: record.timestamp, cacheWrite1h: record.cacheWrite1h)
+                         at: record.timestamp, cacheWrite1h: record.cacheWrite1h,
+                         billingInputTokens: record.billingInputTokens)
         }
 
         let todayStart = cal.startOfDay(for: now)
@@ -198,27 +225,7 @@ public enum Aggregator {
 
         let (models, projects) = breakdown(from: allRecords)
 
-        // cache stats are Claude only
-        var totalCacheRead = 0
-        var totalCacheWrite = 0
-        var totalInput = 0
-        var totalSavedWeightedRead = 0.0
-
-        for r in claudeRecords {
-            totalCacheRead  += r.tokens.cacheRead
-            totalCacheWrite += r.tokens.cacheWrite
-            totalInput      += r.tokens.input
-            let key = Pricing.normalize(model: r.model)
-            let iPrice  = Pricing.inputPrice(forCanonicalKey: key, at: r.timestamp)
-            let crPrice = Pricing.cacheReadPrice(forCanonicalKey: key, at: r.timestamp)
-            totalSavedWeightedRead += Double(r.tokens.cacheRead) * (iPrice - crPrice)
-        }
-
-        let denominator = totalCacheRead + totalCacheWrite + totalInput
-        let hitRate = denominator > 0 ? Double(totalCacheRead) / Double(denominator) : 0
-        let savedUSD = totalSavedWeightedRead / 1_000_000
-
-        let cache = CacheStat(hitRate: hitRate, savedUSD: savedUSD)
+        let cache = cacheStat(from: allRecords)
 
         let totalTodayTokens = todayTokens.total
         let primaryText: String
