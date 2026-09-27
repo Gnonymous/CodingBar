@@ -15,8 +15,23 @@ enum SelfTest {
         if let data = try? JSONEncoder().encode(sample),
            let back = try? JSONDecoder().decode(Snapshot.self, from: data) {
             check("sample snapshot round-trips", back.overview.spend.sessions == 7)
+            check("project detail round-trips", back.projects.first?.models.count == 2
+                  && back.projects.first?.trend.count == sample.projects.first?.trend.count)
         } else {
             check("sample snapshot round-trips", false)
+            check("project detail round-trips", false)
+        }
+        if let project = sample.projects.first,
+           let data = try? JSONEncoder().encode(project),
+           var legacy = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            legacy.removeValue(forKey: "models")
+            legacy.removeValue(forKey: "trend")
+            let oldData = try? JSONSerialization.data(withJSONObject: legacy)
+            let restored = oldData.flatMap { try? JSONDecoder().decode(ProjectStat.self, from: $0) }
+            check("older project JSON remains readable", restored?.models.isEmpty == true
+                  && restored?.trend.isEmpty == true)
+        } else {
+            check("older project JSON remains readable", false)
         }
 
         check("humanTokens M", UsageStore.humanTokens(1_240_000).hasSuffix("M"))
@@ -119,6 +134,17 @@ enum SelfTest {
         let monthModels = snap.overviews.first { $0.range == .month }?.models.count ?? 0
         let todayModels = snap.overviews.first { $0.range == .today }?.models.count ?? 0
         check("month composition ⊇ today", monthModels >= todayModels)
+        let projectDetailsAgree = snap.overviews.flatMap(\.projects).allSatisfy { project in
+            let modelCost = project.models.reduce(0) { $0 + $1.cost }
+            let modelTokens = project.models.reduce(0) { $0 + $1.tokens.total }
+            let trendCost = project.trend.reduce(0) { $0 + $1.cost }
+            let trendTokens = project.trend.reduce(0) { $0 + $1.tokens }
+            return abs(modelCost - project.cost) < 0.000_001
+                && modelTokens == project.tokens.total
+                && abs(trendCost - project.cost) < 0.000_001
+                && trendTokens == project.tokens.total
+        }
+        check("project detail matches range totals", projectDetailsAgree)
 
         // ── Refresh pass reuses work ────────────────────────────────────────────
         // Both assertions guard a silent regression: the numbers stay correct either

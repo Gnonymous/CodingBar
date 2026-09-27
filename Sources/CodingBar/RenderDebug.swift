@@ -32,7 +32,8 @@ enum RenderDebug {
         store.language = language
         store.snapshot = Self.scenarioSnapshot(scenario, language: language)
         store.menuMetric = metric
-        let view = PanelView(store: store, initialTab: tab, scrollable: false)
+        let view = PanelView(store: store, initialTab: tab, scrollable: false,
+                             initialProjectPath: scenario == "project-detail" ? store.snapshot.projects.first?.path : nil)
             .environment(\.colorScheme, dark ? .dark : .light)
         write(view, to: path, scale: 2)
     }

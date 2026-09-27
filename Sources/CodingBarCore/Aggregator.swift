@@ -143,7 +143,8 @@ public enum Aggregator {
         // (the 构成 tab now follows the range selector). `pricedExact` is false when any
         // contributing record priced via a family guess / fallback rate.
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        func breakdown(from records: [RawRecord]) -> (models: [ModelStat], projects: [ProjectStat]) {
+        func breakdown(from records: [RawRecord], trendDates: [Date] = [],
+                       trendUnit: Calendar.Component? = nil) -> (models: [ModelStat], projects: [ProjectStat]) {
             var modelMap: [String: (model: String, provider: Provider, tokens: TokenBreakdown, cost: Double, exact: Bool)] = [:]
             for r in records {
                 let key = Pricing.normalize(model: r.model)
@@ -162,20 +163,39 @@ public enum Aggregator {
                 }
                 .sorted { $0.cost > $1.cost }
 
-            var projectMap: [String: (tokens: TokenBreakdown, cost: Double, lastActive: Date)] = [:]
+            var projectMap: [String: (tokens: TokenBreakdown, cost: Double, lastActive: Date,
+                                      models: [String: ModelStat], buckets: [Date: DayPoint])] = [:]
             for r in records {
                 guard !r.cwd.isEmpty else { continue }
-                var entry = projectMap[r.cwd] ?? (tokens: TokenBreakdown(), cost: 0, lastActive: Date.distantPast)
+                var entry = projectMap[r.cwd] ?? (tokens: TokenBreakdown(), cost: 0,
+                                                  lastActive: Date.distantPast, models: [:], buckets: [:])
+                let cost = recordCost(r)
                 entry.tokens += r.tokens
-                entry.cost += recordCost(r)
+                entry.cost += cost
                 if r.timestamp > entry.lastActive { entry.lastActive = r.timestamp }
+                let key = Pricing.normalize(model: r.model)
+                let modelKey = r.provider.rawValue + "·" + key
+                var model = entry.models[modelKey] ?? ModelStat(model: key, provider: r.provider,
+                                                                 tokens: .init(), cost: 0)
+                model.tokens += r.tokens
+                model.cost += cost
+                model.pricedExact = model.pricedExact && Pricing.priceIsExact(model: r.model)
+                entry.models[modelKey] = model
+                if let trendUnit, let bucketDate = cal.dateInterval(of: trendUnit, for: r.timestamp)?.start {
+                    var point = entry.buckets[bucketDate] ?? DayPoint(date: bucketDate, cost: 0, tokens: 0)
+                    point.cost += cost
+                    point.tokens += r.tokens.total
+                    entry.buckets[bucketDate] = point
+                }
                 projectMap[r.cwd] = entry
             }
             let projects: [ProjectStat] = projectMap
                 .map { cwd, entry -> ProjectStat in
                     let displayPath = cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
                     return ProjectStat(name: URL(fileURLWithPath: cwd).lastPathComponent, path: displayPath,
-                                       tokens: entry.tokens, cost: entry.cost, lastActive: entry.lastActive)
+                                       tokens: entry.tokens, cost: entry.cost, lastActive: entry.lastActive,
+                                       models: entry.models.values.sorted { $0.cost > $1.cost },
+                                       trend: trendDates.map { entry.buckets[$0] ?? DayPoint(date: $0, cost: 0, tokens: 0) })
                 }
                 .sorted { $0.cost > $1.cost }
                 .prefix(8)
@@ -286,15 +306,16 @@ public enum Aggregator {
             let prevTok = tokensTotal(from: prevStart, to: start)
             let deltaTok: Double? = prevTok > 0 ? Double(s.tokens.total - prevTok) / Double(prevTok) * 100 : nil
             let rangeRecords = allRecords.filter { $0.timestamp >= start && $0.timestamp <= now }
-            let bd = breakdown(from: rangeRecords)
-            let ctxAttr = contextAttribution(from: rangeRecords)
-            let usageAttr = usageAttribution(from: rangeRecords)
             let trend: [DayPoint]
             switch range {
             case .today: trend = trendSeries(hourBucketsToday())
             case .week:  trend = trendSeries(dayBuckets(7))
             case .month: trend = trendSeries(dayBuckets(30))
             }
+            let bd = breakdown(from: rangeRecords, trendDates: trend.map(\.date),
+                               trendUnit: range == .today ? .hour : .day)
+            let ctxAttr = contextAttribution(from: rangeRecords)
+            let usageAttr = usageAttribution(from: rangeRecords)
             return Overview(
                 range: range,
                 spend: PeriodTotals(cost: s.cost, tokens: s.tokens, sessions: s.cwds.count),

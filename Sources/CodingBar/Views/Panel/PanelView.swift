@@ -17,11 +17,14 @@ struct PanelView: View {
     /// Live popover scrolls within a screen-bounded height; offscreen rendering
     /// (ImageRenderer has no update pass) uses natural height instead.
     let scrollable: Bool
+    let initialProjectPath: String?
 
-    init(store: UsageStore, initialTab: Int = 0, scrollable: Bool = true, initialSettings: Bool = false) {
+    init(store: UsageStore, initialTab: Int = 0, scrollable: Bool = true,
+         initialSettings: Bool = false, initialProjectPath: String? = nil) {
         self.store = store
         self._tab = State(initialValue: initialTab)
         self.scrollable = scrollable
+        self.initialProjectPath = initialProjectPath
         self._showSettings = State(initialValue: initialSettings)
     }
 
@@ -78,7 +81,7 @@ struct PanelView: View {
 
     @ViewBuilder private var tabContent: some View {
         switch tab {
-        case 1: CostTab(store: store)
+        case 1: CostTab(store: store, initialProject: snap.projects.first { $0.path == initialProjectPath })
         case 2: InsightsTab(store: store)
         default: OverviewTab(store: store, onShowInsights: { tab = 2 })
         }

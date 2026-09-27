@@ -53,8 +53,25 @@ public struct ProjectStat: Codable, Sendable, Identifiable {
     public var tokens: TokenBreakdown
     public var cost: Double
     public var lastActive: Date
-    public init(name: String, path: String, tokens: TokenBreakdown, cost: Double, lastActive: Date) {
+    /// Breakdown for this project's selected range. Empty for older snapshots.
+    public var models: [ModelStat]
+    public var trend: [DayPoint]
+    public init(name: String, path: String, tokens: TokenBreakdown, cost: Double, lastActive: Date,
+                models: [ModelStat] = [], trend: [DayPoint] = []) {
         self.name = name; self.path = path; self.tokens = tokens; self.cost = cost; self.lastActive = lastActive
+        self.models = models; self.trend = trend
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, path, tokens, cost, lastActive, models, trend }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        path = try values.decode(String.self, forKey: .path)
+        tokens = try values.decode(TokenBreakdown.self, forKey: .tokens)
+        cost = try values.decode(Double.self, forKey: .cost)
+        lastActive = try values.decode(Date.self, forKey: .lastActive)
+        models = try values.decodeIfPresent([ModelStat].self, forKey: .models) ?? []
+        trend = try values.decodeIfPresent([DayPoint].self, forKey: .trend) ?? []
     }
 }
 
