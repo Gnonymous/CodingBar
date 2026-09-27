@@ -134,7 +134,10 @@ final class SmokeTests: XCTestCase {
              "payload": ["type": "token_count",
                          "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": cached,
                                                         "cache_write_input_tokens": cacheWrite,
-                                                        "output_tokens": output, "reasoning_output_tokens": 0]]]]
+                                                        "output_tokens": output, "reasoning_output_tokens": 0],
+                                  "last_token_usage": ["input_tokens": input, "cached_input_tokens": cached,
+                                                       "cache_write_input_tokens": cacheWrite,
+                                                       "output_tokens": output, "reasoning_output_tokens": 0]]]]
         }
         let lines = [
             line(["type": "session_meta", "payload": ["cwd": "/tmp/proj"]]),
@@ -167,7 +170,11 @@ final class SmokeTests: XCTestCase {
                     "cache_write_input_tokens": 50_000,
                     "output_tokens": 100, "reasoning_output_tokens": 40,
                 ],
-                "last_token_usage": ["input_tokens": 300_001],
+                "last_token_usage": [
+                    "input_tokens": 300_000, "cached_input_tokens": 100_000,
+                    "cache_write_input_tokens": 50_000,
+                    "output_tokens": 100, "reasoning_output_tokens": 40,
+                ],
             ]],
         ]
         let lines = [
@@ -188,7 +195,78 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(record.tokens.output, 60, "output_tokens already contains reasoning")
         XCTAssertEqual(record.tokens.reasoning, 40)
         XCTAssertEqual(record.tokens.total, 300_100)
-        XCTAssertEqual(record.billingInputTokens, 300_001)
+        XCTAssertEqual(record.billingInputTokens, 300_000)
+    }
+
+    func testModernCodexUsageRecordsIgnoreCumulativeSnapshotsAndDeduplicateResponses() throws {
+        func line(_ object: [String: Any]) throws -> String {
+            String(data: try JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+        }
+        func usage(_ id: String, _ timestamp: String, input: Int, cached: Int, output: Int) -> [String: Any] {
+            ["type": "token_usage_record", "timestamp": timestamp,
+             "payload": ["response_id": id,
+                         "usage": ["input_tokens": input, "cached_input_tokens": cached,
+                                   "cache_write_input_tokens": 0, "output_tokens": output,
+                                   "reasoning_output_tokens": 0]]]
+        }
+        let snapshot: [String: Any] = ["type": "event_msg", "timestamp": "2026-09-27T10:00:01Z",
+            "payload": ["type": "token_count", "info": [
+                "total_token_usage": ["input_tokens": 50_000_000, "cached_input_tokens": 45_000_000,
+                                      "output_tokens": 900_000, "reasoning_output_tokens": 0],
+                "last_token_usage": ["input_tokens": 300, "cached_input_tokens": 200,
+                                     "output_tokens": 10, "reasoning_output_tokens": 0]]]]
+        let lines: [[String: Any]] = [
+            ["type": "session_meta", "payload": ["cwd": "/tmp/project"]],
+            ["type": "turn_context", "payload": ["model": "gpt-6-astra"]],
+            ["type": "response_item", "payload": ["type": "function_call", "name": "exec_command"]],
+            usage("resp-1", "2026-09-27T10:00:00Z", input: 300, cached: 200, output: 10),
+            snapshot,
+            usage("resp-1", "2026-09-27T10:00:02Z", input: 300, cached: 200, output: 10),
+            ["type": "turn_context", "payload": ["model": "gpt-6-luna"]],
+            usage("resp-2", "2026-09-27T10:05:00Z", input: 400, cached: 300, output: 20),
+        ]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+        try lines.map(line).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let records = CodexScanner.parseFile(url)
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records.map(\.model), ["gpt-6-astra", "gpt-6-luna"])
+        XCTAssertEqual(records.map(\.messageId), ["resp-1", "resp-2"])
+        XCTAssertEqual(records.map(\.tokens.input), [100, 100])
+        XCTAssertEqual(records.map(\.tokens.cacheRead), [200, 300])
+        XCTAssertEqual(records.map(\.tokens.output), [10, 20])
+        XCTAssertEqual(records.first?.billingInputTokens, 300)
+        XCTAssertEqual(records.first?.toolNames, ["exec_command"])
+    }
+
+    func testLegacyCodexFirstCounterAndResetUseLastTurnUsage() throws {
+        func line(_ object: [String: Any]) throws -> String {
+            String(data: try JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+        }
+        func count(_ timestamp: String, total: Int, last: Int) -> [String: Any] {
+            ["type": "event_msg", "timestamp": timestamp,
+             "payload": ["type": "token_count", "info": [
+                "total_token_usage": ["input_tokens": total, "cached_input_tokens": 0,
+                                      "output_tokens": total / 10, "reasoning_output_tokens": 0],
+                "last_token_usage": ["input_tokens": last, "cached_input_tokens": 0,
+                                     "output_tokens": last / 10, "reasoning_output_tokens": 0]]]]
+        }
+        let lines: [[String: Any]] = [
+            ["type": "turn_context", "payload": ["model": "gpt-6-astra"]],
+            count("2026-09-27T10:00:00Z", total: 5_000_000, last: 100),
+            count("2026-09-27T10:00:01Z", total: 5_000_000, last: 100),
+            count("2026-09-27T10:05:00Z", total: 5_000_200, last: 200),
+            count("2026-09-27T10:10:00Z", total: 300, last: 50),
+        ]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+        try lines.map(line).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let records = CodexScanner.parseFile(url)
+        XCTAssertEqual(records.count, 3)
+        XCTAssertEqual(records.map(\.tokens.input), [100, 200, 50])
+        XCTAssertEqual(records.map(\.tokens.output), [10, 20, 5])
     }
 
     /// Codex `function_call` items (exec_command, view_image, …) buffered before a
@@ -199,7 +277,9 @@ final class SmokeTests: XCTestCase {
         func tc(ts: String, input: Int, output: Int) -> [String: Any] {
             ["type": "event_msg", "timestamp": ts,
              "payload": ["type": "token_count", "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": 0,
-                                                        "output_tokens": output, "reasoning_output_tokens": 0]]]]
+                                                        "output_tokens": output, "reasoning_output_tokens": 0],
+                                                  "last_token_usage": ["input_tokens": input, "cached_input_tokens": 0,
+                                                       "output_tokens": output, "reasoning_output_tokens": 0]]]]
         }
         let lines = [
             line(["type": "session_meta", "payload": ["cwd": "/tmp/p"]]),
@@ -301,6 +381,30 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(parsed.cacheWrite1h, 60)
     }
 
+    func testClaudeStreamingMessageUsesFinalUsageAndContent() throws {
+        func line(_ object: [String: Any]) throws -> String {
+            String(data: try JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+        }
+        func assistant(_ output: Int, content: [[String: Any]]) -> [String: Any] {
+            ["type": "assistant", "timestamp": "2026-09-27T10:00:00Z", "cwd": "/tmp/project",
+             "message": ["id": "msg-1", "model": "claude-opus-5-5", "content": content,
+                         "usage": ["input_tokens": 2, "cache_read_input_tokens": 200_000,
+                                   "cache_creation_input_tokens": 100, "output_tokens": output]]]
+        }
+        let lines = [assistant(2, content: []),
+                     assistant(432, content: [["type": "tool_use", "name": "Bash"]])]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        try lines.map(line).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parsed = ClaudeScanner.parseFile(url)
+        let result = ClaudeScanner.deduplicate(parsed)
+        XCTAssertEqual(result.records.count, 1)
+        XCTAssertEqual(result.records[0].tokens.output, 432)
+        XCTAssertEqual(result.records[0].toolNames, ["Bash"])
+        XCTAssertEqual(result.seenIds, ["msg-1"])
+    }
+
     /// A Codex session that switches model mid-stream (`/model`) must attribute each
     /// turn to the model in effect AT that turn, not freeze on the session's first one
     /// (the `model == "unknown"` guard used to ignore every later turn_context).
@@ -309,7 +413,9 @@ final class SmokeTests: XCTestCase {
         func tc(ts: String, input: Int, output: Int) -> [String: Any] {
             ["type": "event_msg", "timestamp": ts,
              "payload": ["type": "token_count", "info": ["total_token_usage": ["input_tokens": input, "cached_input_tokens": 0,
-                                                        "output_tokens": output, "reasoning_output_tokens": 0]]]]
+                                                        "output_tokens": output, "reasoning_output_tokens": 0],
+                                                  "last_token_usage": ["input_tokens": input, "cached_input_tokens": 0,
+                                                       "output_tokens": output, "reasoning_output_tokens": 0]]]]
         }
         let lines = [
             line(["type": "session_meta", "payload": ["cwd": "/tmp/p"]]),
@@ -416,6 +522,10 @@ final class SmokeTests: XCTestCase {
     }
 
     func testPriceIsExactFlagsOnlyFallbackModels() {
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-5-5"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-fable-5-1"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "claude-mythos-5-1"))
+        XCTAssertTrue(Pricing.priceIsExact(model: "gpt-6-astra"))
         XCTAssertTrue(Pricing.priceIsExact(model: "claude-opus-4-8"))
         XCTAssertTrue(Pricing.priceIsExact(model: "claude-sonnet-5"))
         XCTAssertTrue(Pricing.priceIsExact(model: "gpt-5.6-sol"))
@@ -423,9 +533,27 @@ final class SmokeTests: XCTestCase {
         XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.5-codex"))          // observed alias, family estimate
         XCTAssertFalse(Pricing.priceIsExact(model: "gpt-5.6-codex"))          // unknown model, generic fallback
         XCTAssertFalse(Pricing.priceIsExact(model: "totally-unknown-model"))
+        XCTAssertEqual(Pricing.cost(model: "sonnet-proxy/unknown-model",
+                                    tokens: TokenBreakdown(input: 1_000_000), at: Date()), 3,
+                       "a router name must not select a Claude family estimate")
     }
 
-    func testPricingUsesCacheDurationAndSonnetFiveEffectiveDates() {
+    func testModelIdentityIncludesLogProviderForRoutedModels() {
+        let tokens = TokenBreakdown(input: 100)
+        let claude = ModelStat(model: "openai/gpt-6-luna", provider: .claude, tokens: tokens, cost: 0.1)
+        let codex = ModelStat(model: "openai/gpt-6-luna", provider: .codex, tokens: tokens, cost: 0.1)
+        XCTAssertNotEqual(claude.id, codex.id)
+
+        let now = Date(timeIntervalSince1970: 1_790_500_000)
+        let record = RawRecord(provider: .claude, model: "gpt-6-luna", timestamp: now,
+                               cwd: "/tmp/project", tokens: tokens, toolName: nil, toolNames: [],
+                               messageId: "routed", sessionKey: "claude-session", hasInterrupt: false)
+        let profile = ProfileBuilder.build(from: [record], now: now)
+        XCTAssertEqual(profile.favoriteModel, "openai/gpt-6-luna")
+        XCTAssertEqual(profile.favoriteModelProvider, .claude)
+    }
+
+    func testPricingUsesCacheDurationAndSonnetFivePermanentPrice() {
         let millionTokens = TokenBreakdown(input: 1_000_000, output: 1_000_000,
                                            cacheRead: 1_000_000, cacheWrite: 1_000_000)
         let july = Date(timeIntervalSince1970: 1_783_555_200)       // 2026-07-01 UTC
@@ -439,14 +567,23 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
                                     at: july, cacheWrite1h: 1_000_000), 16.2, accuracy: 0.000_001)
         XCTAssertEqual(Pricing.cost(model: "claude-sonnet-5", tokens: millionTokens,
-                                    at: september, cacheWrite1h: 1_000_000), 24.3, accuracy: 0.000_001)
+                                    at: september, cacheWrite1h: 1_000_000), 16.2, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-opus-5-5", tokens: millionTokens,
+                                    at: september, cacheWrite1h: 1_000_000), 32.2, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-fable-5-1", tokens: millionTokens,
+                                    at: september, cacheWrite1h: 1_000_000), 80.25, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-mythos-5-1", tokens: millionTokens,
+                                    at: september, cacheWrite1h: 1_000_000), 80.25, accuracy: 0.000_001)
     }
 
     func testOpenAIModelPricesAndAliasesMatchCurrentTable() {
         let date = Date(timeIntervalSince1970: 1_786_233_600)  // 2026-08-09 UTC
         let hundredK = 100_000
         let cases: [(raw: String, canonical: String, input: Double, cached: Double, output: Double)] = [
-            ("gpt-5.6-sol", "openai/gpt-5.6-sol", 5, 0.5, 30),
+            ("gpt-6-astra", "openai/gpt-6-astra", 10, 1, 50),
+            ("gpt-6-sol", "openai/gpt-6-sol", 2, 0.2, 10),
+            ("gpt-6-luna", "openai/gpt-6-luna", 0.1, 0.01, 0.5),
+            ("gpt-5.6-sol", "openai/gpt-5.6-sol", 4, 0.4, 20),
             ("gpt-5.6-terra", "openai/gpt-5.6-terra", 2, 0.2, 12),
             ("gpt-5.6-luna", "openai/gpt-5.6-luna", 0.2, 0.02, 1.2),
             ("gpt-5.5", "openai/gpt-5.5", 5, 0.5, 30),
@@ -526,9 +663,17 @@ final class SmokeTests: XCTestCase {
                                     cacheRead: 100_000, cacheWrite: 100_000)
 
         XCTAssertEqual(Pricing.cost(model: "gpt-5.6-sol", tokens: tokens, at: date,
-                                    billingInputTokens: 272_000), 4.175, accuracy: 0.000_001)
+                                    billingInputTokens: 272_000), 2.94, accuracy: 0.000_001)
         XCTAssertEqual(Pricing.cost(model: "gpt-5.6-sol", tokens: tokens, at: date,
-                                    billingInputTokens: 272_001), 6.85, accuracy: 0.000_001)
+                                    billingInputTokens: 272_001), 4.88, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "gpt-6-astra", tokens: tokens, at: date,
+                                    billingInputTokens: 272_000), 7.35, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "gpt-6-astra", tokens: tokens, at: date,
+                                    billingInputTokens: 272_001), 12.2, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "gpt-6-sol", tokens: tokens, at: date,
+                                    billingInputTokens: 272_001), 2.44, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "gpt-6-luna", tokens: tokens, at: date,
+                                    billingInputTokens: 272_001), 0.122, accuracy: 0.000_001)
         XCTAssertEqual(Pricing.cost(model: "gpt-5.4-mini", tokens: tokens, at: date,
                                     billingInputTokens: 500_000), 0.5325, accuracy: 0.000_001,
                        "models without a long-context surcharge must keep their base price")
@@ -565,18 +710,20 @@ final class SmokeTests: XCTestCase {
 
     /// `normalize` resolved the Opus family with a bare `contains("opus")` that returned
     /// 4.8, so every `claude-opus-5` record was renamed and merged into the 4.8 row —
-    /// 11,616 turns and ~$1,127 hidden on one real machine. The *cost* stayed right only
-    /// because both tiers are $5/$25, which is why nothing looked broken. Each tier must
-    /// resolve to itself, and an unknown version to the newest rather than a pinned one.
-    func testEveryModelTierResolvesToItselfAndUnknownsToTheNewest() {
+    /// 11,616 turns and ~$1,127 hidden on one real machine. Each known tier must
+    /// resolve to itself, while unknown versions retain their ID and approximate price.
+    func testEveryModelTierResolvesToItselfAndUnknownsRemainVisible() {
         for (raw, expected) in [
+            ("claude-opus-5-5", "anthropic/claude-opus-5-5"),
             ("claude-opus-5", "anthropic/claude-opus-5"),
             ("claude-opus-4-8", "anthropic/claude-opus-4-8"),
             ("claude-opus-4-7", "anthropic/claude-opus-4-7"),
             ("claude-opus-4-6", "anthropic/claude-opus-4-6"),
             ("claude-opus-4-5-20251101", "anthropic/claude-opus-4-5"),
             ("claude-opus-4-1-20250805", "anthropic/claude-opus-4-1"),
+            ("claude-fable-5-1", "anthropic/claude-fable-5-1"),
             ("claude-fable-5", "anthropic/claude-fable-5"),
+            ("claude-mythos-5-1", "anthropic/claude-mythos-5-1"),
             ("claude-mythos-5", "anthropic/claude-mythos-5"),
             ("claude-sonnet-5", "anthropic/claude-sonnet-5"),
             ("claude-sonnet-4-6", "anthropic/claude-sonnet-4-6"),
@@ -584,14 +731,15 @@ final class SmokeTests: XCTestCase {
             XCTAssertEqual(Pricing.normalize(model: raw), expected, "\(raw) must keep its own identity")
         }
 
-        // Dated variants and unrecognized versions route through the family fallback.
+        // Dated variants match a known base; future versions remain distinct.
         XCTAssertEqual(Pricing.normalize(model: "claude-opus-5-20260315"), "anthropic/claude-opus-5")
-        XCTAssertEqual(Pricing.normalize(model: "claude-opus-9"), "anthropic/claude-opus-5",
-                       "an unknown Opus must resolve to the newest, not a pinned tier")
-        XCTAssertEqual(Pricing.normalize(model: "claude-sonnet-9"), "anthropic/claude-sonnet-5")
+        XCTAssertEqual(Pricing.normalize(model: "claude-opus-9"), "claude-opus-9")
+        XCTAssertFalse(Pricing.priceIsExact(model: "claude-opus-9"))
+        XCTAssertEqual(Pricing.normalize(model: "claude-sonnet-9"), "claude-sonnet-9")
+        XCTAssertFalse(Pricing.priceIsExact(model: "claude-sonnet-9"))
 
         // The bare selectors Claude Code writes when you pick a family, not a version.
-        XCTAssertEqual(Pricing.normalize(model: "opus"), "anthropic/claude-opus-5")
+        XCTAssertEqual(Pricing.normalize(model: "opus"), "anthropic/claude-opus-5-5")
         XCTAssertEqual(Pricing.normalize(model: "sonnet"), "anthropic/claude-sonnet-5")
     }
 

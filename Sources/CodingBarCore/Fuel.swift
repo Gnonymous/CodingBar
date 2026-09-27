@@ -221,7 +221,7 @@ enum FuelCalculator {
             sessions.append(LiveSession(
                 name: name,
                 model: Pricing.displayName(forCanonicalKey: mkey),
-                provider: Pricing.provider(forCanonicalKey: mkey),
+                provider: .claude,
                 usedTokens: used,
                 maxTokens: maxTok,
                 throughput: tput

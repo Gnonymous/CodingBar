@@ -35,6 +35,7 @@ public enum Pricing {
 
     private static let priceTable: [String: ModelPrice] = [
         // Anthropic Claude — official models
+        "anthropic/claude-opus-5-5":   ModelPrice(input: 4,    output: 20,  cacheRead: 0.2,   cacheWrite5m: 5, cacheWrite1h: 8),
         "anthropic/claude-opus-5":     ModelPrice(input: 5,    output: 25,  cacheRead: 0.5,   cacheWrite5m: 6.25, cacheWrite1h: 10),
         "anthropic/claude-opus-4-8":   ModelPrice(input: 5,    output: 25,  cacheRead: 0.5,   cacheWrite5m: 6.25, cacheWrite1h: 10),
         "anthropic/claude-opus-4-7":   ModelPrice(input: 5,    output: 25,  cacheRead: 0.5,   cacheWrite5m: 6.25, cacheWrite1h: 10),
@@ -43,17 +44,23 @@ public enum Pricing {
         // Deprecated (retires 2026-08-05) but priced 3x the 4.5+ tiers, so it must be
         // enumerated: the "unknown Opus → newest" fallback would otherwise bill it at $5/$25.
         "anthropic/claude-opus-4-1":   ModelPrice(input: 15,   output: 75,  cacheRead: 1.5,   cacheWrite5m: 18.75, cacheWrite1h: 30),
+        "anthropic/claude-fable-5-1":  ModelPrice(input: 10,   output: 50,  cacheRead: 0.25,  cacheWrite5m: 12.5, cacheWrite1h: 20),
         "anthropic/claude-fable-5":    ModelPrice(input: 10,   output: 50,  cacheRead: 1,     cacheWrite5m: 12.5, cacheWrite1h: 20),
         // Project Glasswing, invitation-only — same tier as Fable 5. Without a row it would
         // land on the generic $3/$15 fallback, i.e. 3.3x underpriced.
+        "anthropic/claude-mythos-5-1": ModelPrice(input: 10,   output: 50,  cacheRead: 0.25,  cacheWrite5m: 12.5, cacheWrite1h: 20),
         "anthropic/claude-mythos-5":   ModelPrice(input: 10,   output: 50,  cacheRead: 1,     cacheWrite5m: 12.5, cacheWrite1h: 20),
-        "anthropic/claude-sonnet-5":   ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
+        "anthropic/claude-sonnet-5":   ModelPrice(input: 2,    output: 10,  cacheRead: 0.2,   cacheWrite5m: 2.5, cacheWrite1h: 4),
         "anthropic/claude-sonnet-4-6": ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
         "anthropic/claude-haiku-4-5":  ModelPrice(input: 1,    output: 5,   cacheRead: 0.1,   cacheWrite5m: 1.25, cacheWrite1h: 2),
-        // OpenAI pay-as-you-go rates, current 2026-08-09. Pro models publish no
-        // cached-input discount, so their cache reads are billed at the full input rate.
-        // GPT-5.6 also charges cache writes at 1.25x input; both TTL fields use that one tier.
-        "openai/gpt-5.6-sol":          openAI(input: 5,    cachedInput: 0.5,   output: 30,  cacheWrite: 6.25, longContext: true),
+        // OpenAI standard pay-as-you-go rates. Pro models publish no cached-input
+        // discount. GPT-6 and GPT-5.6 cache writes use 1.25x input; both TTL fields
+        // use that one tier. Source: https://developers.openai.com/api/docs/pricing
+        "openai/gpt-6-astra":          openAI(input: 10,   cachedInput: 1,     output: 50,  cacheWrite: 12.5, longContext: true),
+        "openai/gpt-6-sol":            openAI(input: 2,    cachedInput: 0.2,   output: 10,  cacheWrite: 2.5,  longContext: true),
+        "openai/gpt-6-luna":           openAI(input: 0.1,  cachedInput: 0.01,  output: 0.5, cacheWrite: 0.125,longContext: true),
+        // Promotional standard rate confirmed through at least 2026-11-21.
+        "openai/gpt-5.6-sol":          openAI(input: 4,    cachedInput: 0.4,   output: 20,  cacheWrite: 5,    longContext: true),
         "openai/gpt-5.6-terra":        openAI(input: 2,    cachedInput: 0.2,   output: 12,  cacheWrite: 2.5,  longContext: true),
         "openai/gpt-5.6-luna":         openAI(input: 0.2,  cachedInput: 0.02,  output: 1.2, cacheWrite: 0.25, longContext: true),
         "openai/gpt-5.5":              openAI(input: 5,    cachedInput: 0.5,   output: 30,  longContext: true),
@@ -106,13 +113,16 @@ public enum Pricing {
         // The bare selector tokens ("opus", "sonnet", "haiku") are what Claude Code writes
         // when the user picks a family rather than a version, so they mean *the current*
         // model of that family, not the one that was current when this table was written.
-        for alias in ["opus-5", "claude-opus-5", "opus"] { m[alias] = "anthropic/claude-opus-5" }
+        for alias in ["opus-5.5", "claude-opus-5-5", "opus"] { m[alias] = "anthropic/claude-opus-5-5" }
+        for alias in ["opus-5", "claude-opus-5"] { m[alias] = "anthropic/claude-opus-5" }
         for alias in ["opus-4.8", "claude-opus-4-8"] { m[alias] = "anthropic/claude-opus-4-8" }
         for alias in ["opus-4.7", "claude-opus-4-7"] { m[alias] = "anthropic/claude-opus-4-7" }
         for alias in ["opus-4.6", "claude-opus-4-6"] { m[alias] = "anthropic/claude-opus-4-6" }
         for alias in ["opus-4.5", "claude-opus-4-5", "claude-opus-4-5-20251101"] { m[alias] = "anthropic/claude-opus-4-5" }
         for alias in ["opus-4.1", "claude-opus-4-1", "claude-opus-4-1-20250805"] { m[alias] = "anthropic/claude-opus-4-1" }
+        for alias in ["fable-5.1", "claude-fable-5-1", "fable"] { m[alias] = "anthropic/claude-fable-5-1" }
         for alias in ["fable-5", "claude-fable-5"] { m[alias] = "anthropic/claude-fable-5" }
+        for alias in ["mythos-5.1", "claude-mythos-5-1", "mythos"] { m[alias] = "anthropic/claude-mythos-5-1" }
         for alias in ["mythos-5", "claude-mythos-5"] { m[alias] = "anthropic/claude-mythos-5" }
         for alias in ["sonnet-5", "claude-sonnet-5", "sonnet"] { m[alias] = "anthropic/claude-sonnet-5" }
         for alias in ["sonnet-4.6", "claude-sonnet-4-6"] { m[alias] = "anthropic/claude-sonnet-4-6" }
@@ -160,79 +170,57 @@ public enum Pricing {
         return m
     }()
 
-    /// Returns the canonical pricing key for a raw model string.
-    public static func normalize(model: String) -> String {
+    private static func exactCanonicalKey(model: String) -> String? {
         let lower = model.lowercased()
-
-        // Direct canonical key match
         if priceTable[lower] != nil { return lower }
-
-        // Exact alias lookup. Provider/router prefixes are allowed only when the final
-        // path component is a complete known model ID; substring matching made unrelated
-        // route names ("sonnet-proxy/gpt-…") silently select the wrong provider and price.
         if let canonical = aliasMap[lower] { return canonical }
-        if let modelID = lower.split(separator: "/").last,
-           let canonical = aliasMap[String(modelID)] {
-            return canonical
+        let modelID = String(lower.split(separator: "/").last ?? Substring(lower))
+        if let canonical = aliasMap[modelID] { return canonical }
+        // Claude's dated IDs append YYYYMMDD to an otherwise exact model ID. Match
+        // only that suffix; `claude-opus-5-6` must not inherit Opus 5's exact price.
+        for key in priceTable.keys where key.hasPrefix("anthropic/") {
+            let bare = String(key.dropFirst("anthropic/".count))
+            guard modelID.hasPrefix(bare + "-") else { continue }
+            let suffix = modelID.dropFirst(bare.count + 1)
+            if suffix.count == 8 && suffix.allSatisfy(\.isNumber) { return key }
         }
+        return nil
+    }
 
-        // Family keyword fallback (ordered most-specific first).
-        //
-        // Each family resolves its version before falling back, and an unrecognized
-        // version resolves to the *newest* member rather than a pinned one. A bare
-        // `contains("opus")` used to funnel every Opus into 4.8, so `claude-opus-5` and
-        // every dated variant of it was silently renamed and merged into the 4.8 row —
-        // wrong name, wrong grouping, and wrong cost the moment the two tiers diverge.
-        if lower.contains("opus") {
-            if lower.contains("4-8") || lower.contains("4.8") { return "anthropic/claude-opus-4-8" }
-            if lower.contains("4-7") || lower.contains("4.7") { return "anthropic/claude-opus-4-7" }
-            if lower.contains("4-6") || lower.contains("4.6") { return "anthropic/claude-opus-4-6" }
-            if lower.contains("4-5") || lower.contains("4.5") { return "anthropic/claude-opus-4-5" }
-            if lower.contains("4-1") || lower.contains("4.1") { return "anthropic/claude-opus-4-1" }
-            return "anthropic/claude-opus-5"
-        }
-        if lower.contains("fable")        { return "anthropic/claude-fable-5" }
-        if lower.contains("mythos")       { return "anthropic/claude-mythos-5" }
-        if lower.contains("sonnet") {
-            if lower.contains("4-6") || lower.contains("4.6") { return "anthropic/claude-sonnet-4-6" }
-            return "anthropic/claude-sonnet-5"
-        }
-        if lower.contains("haiku")        { return "anthropic/claude-haiku-4-5" }
-        if lower.contains("deepseek-v4-flash") { return "deepseek/deepseek-v4-flash" }
-        if lower.contains("deepseek-v4-pro")   { return "deepseek/deepseek-v4-pro" }
-        if lower.contains("deepseek")     { return "deepseek/deepseek-v4-flash" }
-        if lower.contains("mimo-v2.5-pro") { return "mimo/mimo-v2.5-pro" }
-        if lower.contains("mimo")         { return "mimo/mimo-v2.5" }
-
-        // Unknown model: keep its own (lowercased) id rather than collapsing every
-        // unmatched model into one "_fallback" bucket. It still prices at the
-        // fallback rate (cost() does priceTable[key] ?? fallback) but the real
-        // name survives for display.
-        return lower
+    /// Returns the canonical pricing key for a known model, otherwise its raw ID.
+    public static func normalize(model: String) -> String {
+        exactCanonicalKey(model: model) ?? model.lowercased()
     }
 
     /// False for the generic fallback and for observed provider aliases whose public
     /// price is only a family estimate. Official canonical IDs, snapshots, and provider-
     /// prefixed forms of those exact IDs remain exact.
     public static func priceIsExact(model: String) -> Bool {
-        priceTable[normalize(model: model)]?.isExact ?? false
+        guard let key = exactCanonicalKey(model: model) else { return false }
+        return priceTable[key]?.isExact ?? false
     }
 
     // MARK: - Display names
 
     /// Short, prefix-free names for the UI (the provider is shown via the colored dot).
     private static let displayNames: [String: String] = [
+        "anthropic/claude-opus-5-5":   "Opus 5.5",
         "anthropic/claude-opus-5":     "Opus 5",
         "anthropic/claude-opus-4-8":   "Opus 4.8",
         "anthropic/claude-opus-4-7":   "Opus 4.7",
         "anthropic/claude-opus-4-6":   "Opus 4.6",
         "anthropic/claude-opus-4-5":   "Opus 4.5",
         "anthropic/claude-opus-4-1":   "Opus 4.1",
+        "anthropic/claude-fable-5-1":  "Fable 5.1",
         "anthropic/claude-fable-5":    "Fable 5",
+        "anthropic/claude-mythos-5-1": "Mythos 5.1",
         "anthropic/claude-mythos-5":   "Mythos 5",
         "anthropic/claude-sonnet-5":   "Sonnet 5",
         "anthropic/claude-sonnet-4-6": "Sonnet 4.6",
         "anthropic/claude-haiku-4-5":  "Haiku 4.5",
+        "openai/gpt-6-astra":          "GPT-6 Astra",
+        "openai/gpt-6-sol":            "GPT-6 Sol",
+        "openai/gpt-6-luna":           "GPT-6 Luna",
         "openai/gpt-5.6-sol":          "GPT-5.6 Sol",
         "openai/gpt-5.6-terra":        "GPT-5.6 Terra",
         "openai/gpt-5.6-luna":         "GPT-5.6 Luna",
@@ -286,13 +274,17 @@ public enum Pricing {
         return key
     }
 
-    /// First instant when Sonnet 5 exits its launch price and returns to $3/$15.
-    private static let sonnet5StandardPriceStarts = Date(timeIntervalSince1970: 1_788_220_800)
-    private static let sonnet5IntroPrice = ModelPrice(input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4)
-
     private static func price(forCanonicalKey key: String, at timestamp: Date) -> ModelPrice {
-        if key == "anthropic/claude-sonnet-5", timestamp < sonnet5StandardPriceStarts {
-            return sonnet5IntroPrice
+        _ = timestamp
+        // Keep known-family estimates for unrecognized versions while preserving the
+        // raw ID (and priceIsExact == false) in the UI.
+        if priceTable[key] == nil {
+            let modelID = String(key.lowercased().split(separator: "/").last ?? Substring(key.lowercased()))
+            if modelID.hasPrefix("claude-opus-") { return priceTable["anthropic/claude-opus-5-5"]! }
+            if modelID.hasPrefix("claude-fable-") { return priceTable["anthropic/claude-fable-5-1"]! }
+            if modelID.hasPrefix("claude-mythos-") { return priceTable["anthropic/claude-mythos-5-1"]! }
+            if modelID.hasPrefix("claude-sonnet-") { return priceTable["anthropic/claude-sonnet-5"]! }
+            if modelID.hasPrefix("claude-haiku-") { return priceTable["anthropic/claude-haiku-4-5"]! }
         }
         return priceTable[key] ?? fallback
     }

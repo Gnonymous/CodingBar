@@ -17,8 +17,13 @@ public enum CodexScanner {
             return []
         }
 
-        return scanner.scan(directory: sessionsDir) { fileURL in
+        let records = scanner.scan(directory: sessionsDir) { fileURL in
             parseFile(fileURL)
+        }
+        var seenResponses = Set<String>()
+        return records.filter { record in
+            guard let id = record.messageId else { return true }
+            return seenResponses.insert(id).inserted
         }
     }
 
@@ -36,15 +41,16 @@ public enum CodexScanner {
         var cwd = ""
         var model = "unknown"
         var records: [RawRecord] = []
-        // Codex `token_count` events carry a CUMULATIVE `total_token_usage` snapshot
-        // that grows every turn. We used to sum the per-turn `last_token_usage`, but
-        // replayed/duplicate events inflated that sum past the session's real total
-        // (measured ~1.3–1.8× across this machine's logs). Taking the positive delta
-        // of `total_token_usage` reconstructs each turn's true increment, drops
-        // duplicate snapshots (Δ≤0), and preserves per-turn timestamps for bucketing.
-        var prevInput = 0, prevCached = 0, prevCacheWrite = 0, prevOutput = 0, prevReasoning = 0
+        // Modern rollouts write one token_usage_record per response, followed by a
+        // token_count snapshot of the same usage. Once the former appears, the latter
+        // must be ignored. Older rollouts only have token_count; their cumulative
+        // counter may already include earlier files, so the first request (or a reset)
+        // must come from last_token_usage, not the cumulative total.
+        var hasModernUsage = false
+        var seenResponses = Set<String>()
+        var previousTotal: [String: Any]?
         // Codex tool calls (`function_call` response items, e.g. exec_command) arrive
-        // before the turn's `token_count`; buffer their names and attach them to the
+        // before the turn's usage record; buffer their names and attach them to the
         // next emitted record so the habits tool-mix counts Codex, not just Claude.
         var pendingTools: [String] = []
 
@@ -88,43 +94,60 @@ public enum CodexScanner {
                     pendingTools.append(name)
                 }
 
+            case "token_usage_record":
+                guard let payload = obj["payload"] as? [String: Any],
+                      let usage = payload["usage"] as? [String: Any] else { return }
+                let responseID = (payload["response_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                if let responseID, seenResponses.contains(responseID) {
+                    pendingTools.removeAll(keepingCapacity: true)
+                    return
+                }
+                guard let timestamp = iso.date(from: obj["timestamp"] as? String) else {
+                    pendingTools.removeAll(keepingCapacity: true)
+                    return
+                }
+                guard let record = makeRecord(usage: usage, billingInputTokens: usage["input_tokens"] as? Int,
+                                              timestamp: timestamp, responseID: responseID) else {
+                    pendingTools.removeAll(keepingCapacity: true)
+                    return
+                }
+                if let responseID { _ = seenResponses.insert(responseID) }
+                hasModernUsage = true
+                records.append(record)
+                pendingTools.removeAll(keepingCapacity: true)
+
             case "event_msg":
                 guard let payload = obj["payload"] as? [String: Any],
                       let payloadType = payload["type"] as? String,
                       payloadType == "token_count" else {
                     return
                 }
-
-                // Every non-null `info` carries `total_token_usage` (verified across
-                // every real event). Its positive delta remains the billable token count;
-                // `last_token_usage.input_tokens` is retained only as the absolute prompt
-                // size needed to select OpenAI's >272K long-context price tier.
+                if hasModernUsage { return }
                 guard let info = payload["info"] as? [String: Any],
                       let total = info["total_token_usage"] as? [String: Any] else {
                     return
                 }
                 let last = info["last_token_usage"] as? [String: Any]
-                let billingInputTokens = (last?["input_tokens"] as? Int).map { max(0, $0) }
-
-                let curInput      = total["input_tokens"] as? Int ?? 0
-                let curCached     = total["cached_input_tokens"] as? Int ?? 0
-                let curCacheWrite = total["cache_write_input_tokens"] as? Int ?? 0
-                let curOutput     = total["output_tokens"] as? Int ?? 0
-                let curReasoning  = total["reasoning_output_tokens"] as? Int ?? 0
-
-                // Δ of the cumulative counter. A counter that *drops* (post-compaction
-                // reset) starts a fresh baseline so those turns aren't lost.
-                let reset = curInput < prevInput || curOutput < prevOutput
-                let dInput      = reset ? curInput      : curInput - prevInput
-                let dCached     = reset ? curCached     : curCached - prevCached
-                let dCacheWrite = reset ? curCacheWrite : curCacheWrite - prevCacheWrite
-                let dOutput     = reset ? curOutput     : curOutput - prevOutput
-                let dReasoning  = reset ? curReasoning  : curReasoning - prevReasoning
-                prevInput = curInput; prevCached = curCached; prevCacheWrite = curCacheWrite
-                prevOutput = curOutput; prevReasoning = curReasoning
-
-                // No forward progress → a replayed/duplicate snapshot, nothing billed.
-                guard dInput + dOutput > 0 else { return }
+                let keys = ["input_tokens", "cached_input_tokens", "cache_write_input_tokens",
+                            "output_tokens", "reasoning_output_tokens"]
+                let reset = previousTotal.map { previous in
+                    keys.contains { (total[$0] as? Int ?? 0) < (previous[$0] as? Int ?? 0) }
+                } ?? true
+                let usage: [String: Any]?
+                if reset {
+                    usage = last
+                } else {
+                    var delta: [String: Any] = [:]
+                    for key in keys {
+                        delta[key] = (total[key] as? Int ?? 0) - (previousTotal?[key] as? Int ?? 0)
+                    }
+                    usage = delta
+                }
+                previousTotal = total
+                guard let usage,
+                      (usage["input_tokens"] as? Int ?? 0) + (usage["output_tokens"] as? Int ?? 0) > 0 else {
+                    return
+                }
 
                 // Unparseable/absent timestamp → DROP rather than fall back to Date().
                 // Clear this turn's buffered tools too (they belong to the dropped record,
@@ -134,39 +157,10 @@ public enum CodexScanner {
                     pendingTools.removeAll(keepingCapacity: true); return
                 }
 
-                // Codex input_tokens includes both cached reads and cache writes. Keep all
-                // three buckets disjoint so both total tokens and model-specific cache rates
-                // remain correct. Negative subset deltas are treated as zero after a reset.
-                let cacheRead = max(0, dCached)
-                let cacheWrite = max(0, dCacheWrite)
-                let netInput = max(0, dInput - cacheRead - cacheWrite)
-
-                // Codex's output_tokens already includes reasoning_output_tokens. Split
-                // the subset into its own bucket so TokenBreakdown.total and Pricing.cost
-                // count it once rather than adding the same reasoning tokens twice.
-                let reasoning = min(max(0, dReasoning), max(0, dOutput))
-                let tokens = TokenBreakdown(
-                    input: netInput,
-                    output: max(0, dOutput - reasoning),
-                    cacheRead: cacheRead,
-                    cacheWrite: cacheWrite,
-                    reasoning: reasoning
-                )
-
-                let record = RawRecord(
-                    provider: .codex,
-                    model: model,
-                    timestamp: timestamp,
-                    cwd: cwd,
-                    tokens: tokens,
-                    billingInputTokens: billingInputTokens,
-                    toolName: pendingTools.first,
-                    toolNames: pendingTools,
-                    messageId: nil,
-                    sessionKey: sessionKey,
-                    hasInterrupt: false
-                )
-                records.append(record)
+                if let record = makeRecord(usage: usage, billingInputTokens: last?["input_tokens"] as? Int,
+                                           timestamp: timestamp, responseID: nil) {
+                    records.append(record)
+                }
                 pendingTools.removeAll(keepingCapacity: true)
 
             default:
@@ -176,5 +170,22 @@ public enum CodexScanner {
         }
 
         return records
+
+        func makeRecord(usage: [String: Any], billingInputTokens: Int?, timestamp: Date,
+                        responseID: String?) -> RawRecord? {
+            let totalInput = max(0, usage["input_tokens"] as? Int ?? 0)
+            let cacheRead = max(0, usage["cached_input_tokens"] as? Int ?? 0)
+            let cacheWrite = max(0, usage["cache_write_input_tokens"] as? Int ?? 0)
+            let totalOutput = max(0, usage["output_tokens"] as? Int ?? 0)
+            guard totalInput + totalOutput > 0 else { return nil }
+            let reasoning = min(max(0, usage["reasoning_output_tokens"] as? Int ?? 0), totalOutput)
+            let tokens = TokenBreakdown(input: max(0, totalInput - cacheRead - cacheWrite),
+                                        output: totalOutput - reasoning, cacheRead: cacheRead,
+                                        cacheWrite: cacheWrite, reasoning: reasoning)
+            return RawRecord(provider: .codex, model: model, timestamp: timestamp, cwd: cwd,
+                             tokens: tokens, billingInputTokens: billingInputTokens.map { max(0, $0) },
+                             toolName: pendingTools.first, toolNames: pendingTools,
+                             messageId: responseID, sessionKey: sessionKey, hasInterrupt: false)
+        }
     }
 }

@@ -144,18 +144,20 @@ public enum Aggregator {
         // contributing record priced via a family guess / fallback rate.
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         func breakdown(from records: [RawRecord]) -> (models: [ModelStat], projects: [ProjectStat]) {
-            var modelMap: [String: (tokens: TokenBreakdown, cost: Double, exact: Bool)] = [:]
+            var modelMap: [String: (model: String, provider: Provider, tokens: TokenBreakdown, cost: Double, exact: Bool)] = [:]
             for r in records {
                 let key = Pricing.normalize(model: r.model)
-                var entry = modelMap[key] ?? (tokens: TokenBreakdown(), cost: 0, exact: true)
+                let groupKey = r.provider.rawValue + "·" + key
+                var entry = modelMap[groupKey] ?? (model: key, provider: r.provider,
+                                                   tokens: TokenBreakdown(), cost: 0, exact: true)
                 entry.tokens += r.tokens
                 entry.cost += recordCost(r)
                 entry.exact = entry.exact && Pricing.priceIsExact(model: r.model)
-                modelMap[key] = entry
+                modelMap[groupKey] = entry
             }
             let models: [ModelStat] = modelMap
-                .map { key, entry in
-                    ModelStat(model: key, provider: Pricing.provider(forCanonicalKey: key),
+                .map { _, entry in
+                    ModelStat(model: entry.model, provider: entry.provider,
                               tokens: entry.tokens, cost: entry.cost, pricedExact: entry.exact)
                 }
                 .sorted { $0.cost > $1.cost }

@@ -17,21 +17,31 @@ public enum ClaudeScanner {
             return ([], [])
         }
 
-        var seenIds = Set<String>()
-        var allRecords: [RawRecord] = []
-
         let records = scanner.scan(directory: projectsDir) { fileURL in
             parseFile(fileURL)
         }
+        return deduplicate(records)
+    }
 
-        // Dedup by message.id across all files
+    /// Streamed assistant messages repeat the same id. The later record carries
+    /// the final output-token count and often the completed tool-use content.
+    static func deduplicate(_ records: [RawRecord]) -> (records: [RawRecord], seenIds: Set<String>) {
+        var seenIds = Set<String>()
+        var indexByID: [String: Int] = [:]
+        var allRecords: [RawRecord] = []
         for record in records {
             if let mid = record.messageId {
-                guard seenIds.insert(mid).inserted else { continue }
+                if let index = indexByID[mid] {
+                    if record.tokens.output >= allRecords[index].tokens.output {
+                        allRecords[index] = record
+                    }
+                    continue
+                }
+                indexByID[mid] = allRecords.count
+                seenIds.insert(mid)
             }
             allRecords.append(record)
         }
-
         return (allRecords, seenIds)
     }
 
