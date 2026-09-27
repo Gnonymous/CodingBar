@@ -90,7 +90,7 @@ Click the menu-bar item to open a three-tab panel:
 - **Composition** (构成) — where the money went: spend broken down by model and by project.
 - **Insights** (洞察) — code output, tool-use mix, golden-hours heatmap, savings tips, and a quota-depletion forecast.
 
-> **How the numbers are computed.** *Spend* is an **estimate at pay-as-you-go API prices** (`Pricing.swift`), **not your subscription bill** — on a Max / ChatGPT plan, read it as "equivalent API value," not money actually charged. *Code output* is **approximate git attribution**: all non-merge commits in a session's working directory within the time window — it can't tell hand-written from AI commits and excludes uncommitted work. *Codex* token totals are de-duplicated from each session's cumulative counter (`total_token_usage`), so they no longer double-count replayed events.
+> **How the numbers are computed.** *Spend* is an **estimate at standard pay-as-you-go API prices** (`Pricing.swift`), **not your subscription bill** — on a Max / ChatGPT plan, read it as "equivalent API value," not money actually charged. Models without a published rate use a visibly approximate estimate. *Code output* is **approximate git attribution**: all non-merge commits in a session's working directory within the time window — it can't tell hand-written from AI commits and excludes uncommitted work. *Codex* uses per-response token usage in recent logs; older logs use cumulative-counter deltas without charging the prior session's starting balance.
 
 ## Privacy
 

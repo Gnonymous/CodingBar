@@ -2,20 +2,6 @@ import Foundation
 
 enum Coach {
 
-    // Canonical keys for Opus and Haiku pricing families. Every Opus tier belongs here:
-    // a missing one doesn't degrade the tip, it silently excludes that model's turns from
-    // the count entirely, so the advice goes quiet exactly when a new Opus becomes the
-    // model people actually run.
-    private static let opusKeys: Set<String> = [
-        "anthropic/claude-opus-5",
-        "anthropic/claude-opus-4-8",
-        "anthropic/claude-opus-4-7",
-        "anthropic/claude-opus-4-6",
-    ]
-    private static let haikuKeys: Set<String> = [
-        "anthropic/claude-haiku-4-5",
-    ]
-
     // A "simple" turn has zero or one tool call and fewer than 300 output tokens.
     private static func isSimpleTurn(_ record: RawRecord) -> Bool {
         record.toolNames.count <= 1 && record.tokens.output < 300
@@ -24,42 +10,23 @@ enum Coach {
     static func opusOnSimpleTip(from todayRecords: [RawRecord], language: AppLanguage) -> Insight? {
         let claudeToday = todayRecords.filter { $0.provider == .claude }
 
-        // Cost delta: only count the non-cached input (cache tokens are already cheap
-        // regardless of model — switching models won't help much there).
-        var totalSimpleNetInput = 0   // non-cached input tokens only
-        var totalSimpleCacheRead = 0  // cache-read tokens (priced differently)
-        var totalSimpleOutput = 0
+        // Compare each turn at its actual Opus rate; cache writes are excluded
+        // because switching models would recreate the cache rather than reuse it.
+        var totalSaved = 0.0
         var count = 0
 
         for r in claudeToday {
             let key = Pricing.normalize(model: r.model)
-            guard opusKeys.contains(key) else { continue }
+            guard key.hasPrefix("anthropic/claude-opus-"), Pricing.priceIsExact(model: r.model) else { continue }
             guard isSimpleTurn(r) else { continue }
-            totalSimpleNetInput += r.tokens.input
-            totalSimpleCacheRead += r.tokens.cacheRead
-            totalSimpleOutput += r.tokens.output
+            let compared = TokenBreakdown(input: r.tokens.input, output: r.tokens.output,
+                                          cacheRead: r.tokens.cacheRead)
+            totalSaved += Pricing.cost(model: r.model, tokens: compared, at: r.timestamp)
+                - Pricing.cost(model: "claude-haiku-4-5", tokens: compared, at: r.timestamp)
             count += 1
         }
 
         guard count >= 3 else { return nil }  // not enough to matter
-
-        // Price the delta off the current Opus, not a pinned older one. Identical numbers
-        // today (both tiers are $5/$25), but this is what keeps the saving honest the next
-        // time the tiers diverge.
-        let opusKey = "anthropic/claude-opus-5"
-        let haikuKey = "anthropic/claude-haiku-4-5"
-        let opusInputPrice  = Pricing.inputPrice(forCanonicalKey: opusKey)
-        let haikuInputPrice = Pricing.inputPrice(forCanonicalKey: haikuKey)
-        // Cache read price delta is small; include it for completeness
-        let opusCacheReadPrice  = Pricing.cacheReadPrice(forCanonicalKey: opusKey)
-        let haikuCacheReadPrice = Pricing.cacheReadPrice(forCanonicalKey: haikuKey)
-        let opusOutputPricePerM  = 25.0   // USD/1M
-        let haikuOutputPricePerM =  5.0   // USD/1M
-
-        let savedInput     = Double(totalSimpleNetInput)  * (opusInputPrice  - haikuInputPrice)  / 1_000_000
-        let savedCacheRead = Double(totalSimpleCacheRead) * (opusCacheReadPrice - haikuCacheReadPrice) / 1_000_000
-        let savedOutput    = Double(totalSimpleOutput)    * (opusOutputPricePerM - haikuOutputPricePerM) / 1_000_000
-        let totalSaved = savedInput + savedCacheRead + savedOutput
 
         guard totalSaved >= 0.2 else { return nil }
 

@@ -83,7 +83,9 @@ final class Scanner {
     /// preserve the 1-hour prompt-cache portion for duration-aware billing. v7: Codex
     /// records preserve the absolute last-turn input size for long-context pricing. v8:
     /// Codex cache-write tokens are split from fresh input instead of being discarded.
-    private static let cacheVersion = 8
+    /// v9: Codex prefers per-response usage records and no longer counts a prior
+    /// session's cumulative counter as the first turn of each rollout file.
+    private static let cacheVersion = 9
 
     private struct CacheFile: Codable {
         var version: Int

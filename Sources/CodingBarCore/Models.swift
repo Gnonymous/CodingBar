@@ -33,7 +33,7 @@ public struct TokenBreakdown: Codable, Sendable, Equatable {
 }
 
 public struct ModelStat: Codable, Sendable, Identifiable {
-    public var id: String { model }
+    public var id: String { provider.rawValue + "·" + model }
     public var model: String
     public var provider: Provider
     public var tokens: TokenBreakdown

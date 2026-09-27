@@ -24,7 +24,7 @@ enum ProfileBuilder {
         var hourTokens = [Int](repeating: 0, count: 24)
         // Favorite = most-frequently used model, not most tokens, so one heavy session
         // doesn't crown a model the user rarely picks.
-        var modelCounts: [String: Int] = [:]
+        var modelCounts: [String: (model: String, provider: Provider, count: Int)] = [:]
         var dayTokens: [Date: Int] = [:]
 
         for r in records {
@@ -39,7 +39,11 @@ enum ProfileBuilder {
             activeDaySet.insert(day)
             dayTokens[day, default: 0] += r.tokens.total
             hourTokens[cal.component(.hour, from: r.timestamp)] += r.tokens.total
-            modelCounts[Pricing.normalize(model: r.model), default: 0] += 1
+            let model = Pricing.normalize(model: r.model)
+            let key = r.provider.rawValue + "·" + model
+            var entry = modelCounts[key] ?? (model: model, provider: r.provider, count: 0)
+            entry.count += 1
+            modelCounts[key] = entry
         }
 
         let peakHour: Int = {
@@ -48,10 +52,11 @@ enum ProfileBuilder {
         }()
 
         // Stable on ties: most uses wins, then the lexicographically smaller key.
-        let favorite = modelCounts.max {
-            $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key
-        }?.key ?? ""
-        let favoriteProvider = favorite.isEmpty ? Provider.claude : Pricing.provider(forCanonicalKey: favorite)
+        let favoriteEntry = modelCounts.max {
+            $0.value.count != $1.value.count ? $0.value.count < $1.value.count : $0.key > $1.key
+        }?.value
+        let favorite = favoriteEntry?.model ?? ""
+        let favoriteProvider = favoriteEntry?.provider ?? .claude
 
         let (current, longest) = streaks(activeDays: activeDaySet, now: now, cal: cal)
         let calendar = contributionCalendar(dayTokens: dayTokens, now: now, cal: cal)
