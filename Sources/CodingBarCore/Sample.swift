@@ -11,6 +11,12 @@ public extension Snapshot {
             let d = cal.date(byAdding: .hour, value: -(hourly.count - 1 - i), to: now) ?? now
             return DayPoint(date: d, cost: c, tokens: Int(c * 290_000))
         }
+        let projectTrendTotal = hourly.reduce(0, +)
+        var projectTrend = trend.map { point in
+            DayPoint(date: point.date, cost: point.cost * 3.10 / projectTrendTotal,
+                     tokens: Int(point.cost * 890_000 / projectTrendTotal))
+        }
+        projectTrend[projectTrend.count - 1].tokens += 890_000 - projectTrend.reduce(0) { $0 + $1.tokens }
         let heat: [[Double]] = (0..<7).map { d in
             (0..<12).map { h in
                 var base = 0.22
@@ -61,7 +67,11 @@ public extension Snapshot {
                 rhythm: Rhythm(turnsPerSession: 11, avgMinutes: 22, interruptRate: 0.18),
                 heatmap: Heatmap(cells: heat, peakLabel: "22:00–24:00")),
             projects: [
-                ProjectStat(name: "coding-bar", path: "~/dev/coding-bar", tokens: TokenBreakdown(input: 220_000, output: 70_000, cacheRead: 600_000), cost: 3.10, lastActive: now.addingTimeInterval(-720)),
+                ProjectStat(name: "coding-bar", path: "~/dev/coding-bar", tokens: TokenBreakdown(input: 220_000, output: 70_000, cacheRead: 600_000), cost: 3.10, lastActive: now.addingTimeInterval(-720),
+                            models: [
+                                ModelStat(model: "Opus 4.8", provider: .claude, tokens: TokenBreakdown(input: 160_000, output: 50_000, cacheRead: 490_000), cost: 2.40),
+                                ModelStat(model: "Sonnet 4.6", provider: .claude, tokens: TokenBreakdown(input: 60_000, output: 20_000, cacheRead: 110_000), cost: 0.70),
+                            ], trend: projectTrend),
                 ProjectStat(name: "api-svc", path: "~/work/api-svc", tokens: TokenBreakdown(input: 60_000, output: 20_000, cacheRead: 130_000), cost: 0.80, lastActive: now.addingTimeInterval(-7200)),
                 ProjectStat(name: "dotfiles", path: "~/.dotfiles", tokens: TokenBreakdown(input: 18_000, output: 6_000, cacheRead: 36_000), cost: 0.20, lastActive: now.addingTimeInterval(-86_400)),
             ],

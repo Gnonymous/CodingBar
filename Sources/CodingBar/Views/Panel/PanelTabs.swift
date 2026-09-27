@@ -425,8 +425,17 @@ struct CostTab: View {
     @ObservedObject var store: UsageStore
     @State private var modelsExpanded = false
     @State private var projectsExpanded = false
+    @State private var selectedProject: ProjectStat?
+    @State private var selectedProjectRange: Range = .today
+    @State private var timelineExpanded = false
     private let modelCap = 4
     private let projectCap = 5
+
+    init(store: UsageStore, initialProject: ProjectStat? = nil) {
+        self.store = store
+        self._selectedProject = State(initialValue: initialProject)
+        self._selectedProjectRange = State(initialValue: store.selectedRange)
+    }
 
     private var snap: Snapshot { store.snapshot }
     private var metric: MenuMetric { store.menuMetric }
@@ -458,6 +467,16 @@ struct CostTab: View {
     private var shownProjects: [ProjectStat] { projectsExpanded ? sortedProjects : Array(sortedProjects.prefix(projectCap)) }
 
     var body: some View {
+        Group {
+            if let selectedProject {
+                projectDetail(selectedProject)
+            } else {
+                costOverview
+            }
+        }
+    }
+
+    private var costOverview: some View {
         VStack(spacing: 0) {
             DCSection {
                 VStack(alignment: .leading, spacing: 0) {
@@ -497,6 +516,130 @@ struct CostTab: View {
             contextSection
             attributionSection
         }
+    }
+
+    private func projectDetail(_ selected: ProjectStat) -> some View {
+        let project = (snap.overviews.first { $0.range == selectedProjectRange }?.projects
+            ?? snap.projects).first { $0.path == selected.path } ?? selected
+        let models = project.models
+        let maxCost = max(models.map(\.cost).max() ?? 0, 1e-9)
+        let maxTokens = max(Double(models.map { $0.tokens.total }.max() ?? 0), 1)
+        return VStack(spacing: 0) {
+            DCSection {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Button { selectedProject = nil } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left").font(.system(size: 9, weight: .semibold))
+                                Text(lang.t("By project", "按项目")).font(.system(size: 10.5, weight: .medium))
+                            }
+                            .foregroundStyle(dc.accent)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).focusEffectDisabled()
+                        Spacer()
+                        Text(projectRangeLabel).font(.system(size: 10)).foregroundStyle(dc.fg3)
+                    }
+                    .padding(.bottom, 15)
+
+                    Text(project.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(dc.fg)
+                        .lineLimit(2)
+                    Text(project.path).font(.system(size: 9.5)).foregroundStyle(dc.fg3)
+                        .lineLimit(2).textSelection(.enabled).padding(.top, 3)
+
+                    Text(metric == .cost ? Panel.usd(project.cost) : Panel.tok(project.tokens.total))
+                        .font(.system(size: 32, weight: .bold)).monospacedDigit().tracking(-0.7)
+                        .foregroundStyle(dc.fg).padding(.top, 14)
+                    Text(metric == .cost
+                         ? lang.t("\(Panel.tok(project.tokens.total)) tokens · standard API estimate",
+                                  "\(Panel.tok(project.tokens.total)) Token · 标准 API 价格估算")
+                         : lang.t("\(Panel.usd(project.cost)) · standard API estimate",
+                                  "\(Panel.usd(project.cost)) · 标准 API 价格估算"))
+                        .font(.system(size: 10)).foregroundStyle(dc.fg3).padding(.top, 2)
+
+                    if project.trend.count >= 3 {
+                        DCSparkline(values: metric == .cost
+                                    ? project.trend.map(\.cost)
+                                    : project.trend.map { Double($0.tokens) })
+                            .padding(.top, 15)
+                        HStack {
+                            Text(projectTrendStart(project.trend[0].date))
+                            Spacer()
+                            Text(lang.t("now", "现在"))
+                        }
+                        .font(.system(size: 9)).foregroundStyle(dc.fg3)
+                        .padding(.horizontal, 3).padding(.top, 6)
+                    }
+                }
+            }
+            if !models.isEmpty {
+                DCSection {
+                    VStack(alignment: .leading, spacing: 11) {
+                        DCLabel(metric == .cost ? lang.t("By model · cost", "按模型 · 花费")
+                                                : lang.t("By model · tokens", "按模型 · Token"))
+                        ForEach(metric == .cost ? models : models.sorted { $0.tokens.total > $1.tokens.total }) {
+                            modelRow($0, maxCost: maxCost, maxTokens: maxTokens)
+                        }
+                    }
+                }
+            }
+            if project.trend.contains(where: { $0.tokens > 0 }) {
+                projectTimeline(project.trend)
+            }
+        }
+    }
+
+    private func projectTimeline(_ trend: [DayPoint]) -> some View {
+        let points = trend.filter { $0.tokens > 0 }.reversed()
+        let maxValue = max(points.map { metric == .cost ? $0.cost : Double($0.tokens) }.max() ?? 0, 1e-9)
+        let shown = timelineExpanded ? Array(points) : Array(points.prefix(7))
+        return DCSection {
+            VStack(alignment: .leading, spacing: 10) {
+                DCLabel(selectedProjectRange == .today
+                        ? lang.t("By hour", "按小时") : lang.t("By day", "按天"))
+                ForEach(shown) { point in
+                    HStack(spacing: 9) {
+                        Text(projectTimeLabel(point.date))
+                            .font(.system(size: 10.5)).foregroundStyle(dc.fg2)
+                            .frame(width: 42, alignment: .leading)
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2).fill(dc.track)
+                                RoundedRectangle(cornerRadius: 2).fill(dc.accent.opacity(0.65))
+                                    .frame(width: g.size.width * max(0.03, (metric == .cost ? point.cost : Double(point.tokens)) / maxValue))
+                            }
+                        }
+                        .frame(height: 4)
+                        Text(metric == .cost ? Panel.usd(point.cost) : Panel.tok(point.tokens))
+                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                            .foregroundStyle(dc.fg).frame(width: 69, alignment: .trailing)
+                    }
+                }
+                if points.count > 7 {
+                    expandToggle(timelineExpanded, points.count - 7) { timelineExpanded.toggle() }
+                }
+            }
+        }
+    }
+
+    private var projectRangeLabel: String {
+        switch selectedProjectRange {
+        case .today: return lang.t("Today", "今日")
+        case .week: return lang.t("Last 7d", "近 7 天")
+        case .month: return lang.t("Last 30d", "近 30 天")
+        }
+    }
+
+    private func projectTrendStart(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = selectedProjectRange == .today ? "H:mm" : "M/d"
+        return formatter.string(from: date)
+    }
+
+    private func projectTimeLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = selectedProjectRange == .today ? "H:00" : "M/d"
+        return formatter.string(from: date)
     }
 
     // MARK: 用量归因 — Skills / Subagents / Plugins / MCP servers (`/usage` "% of usage").
@@ -654,10 +797,10 @@ struct CostTab: View {
         .buttonStyle(.plain).focusEffectDisabled()
     }
 
-    private func modelRow(_ m: ModelStat) -> some View {
+    private func modelRow(_ m: ModelStat, maxCost: Double? = nil, maxTokens: Double? = nil) -> some View {
         let name = (m.provider == .claude ? "Claude " : "Codex ") + Pricing.displayName(forCanonicalKey: m.model)
         let metricVal = metric == .cost ? m.cost : Double(m.tokens.total)
-        let maxVal = metric == .cost ? maxModelCost : maxModelTokens
+        let maxVal = metric == .cost ? (maxCost ?? maxModelCost) : (maxTokens ?? maxModelTokens)
         let share = max(3.0, metricVal / maxVal * 100)
         return VStack(spacing: 4) {
             HStack(spacing: 7) {
@@ -694,24 +837,35 @@ struct CostTab: View {
         let metricVal = metric == .cost ? p.cost : Double(p.tokens.total)
         let maxVal = metric == .cost ? maxProjCost : maxProjTokens
         let share = max(3.0, metricVal / maxVal * 100)
-        return HStack(spacing: 9) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(p.name).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg).lineLimit(1)
-                GeometryReader { g in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2).fill(dc.track)
-                        RoundedRectangle(cornerRadius: 2).fill(dc.accent.opacity(0.55))
-                            .frame(width: g.size.width * share / 100)
+        return Button {
+            selectedProject = p
+            selectedProjectRange = range
+            timelineExpanded = false
+        } label: {
+            HStack(spacing: 9) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(p.name).font(.system(size: 11, weight: .medium)).foregroundStyle(dc.fg).lineLimit(1)
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 2).fill(dc.track)
+                            RoundedRectangle(cornerRadius: 2).fill(dc.accent.opacity(0.55))
+                                .frame(width: g.size.width * share / 100)
+                        }
                     }
+                    .frame(height: 3)
                 }
-                .frame(height: 3)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(metric == .cost ? Panel.usd(p.cost) : Panel.tok(p.tokens.total))
+                        .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(dc.fg)
+                    Text(lastLabel(p.lastActive)).font(.system(size: 9)).foregroundStyle(dc.fg3)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold)).foregroundStyle(dc.fg3)
             }
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(metric == .cost ? Panel.usd(p.cost) : Panel.tok(p.tokens.total))
-                    .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(dc.fg)
-                Text(lastLabel(p.lastActive)).font(.system(size: 9)).foregroundStyle(dc.fg3)
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain).focusEffectDisabled()
+        .help(p.path)
     }
 
     private func lastLabel(_ d: Date) -> String {
