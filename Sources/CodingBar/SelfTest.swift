@@ -89,6 +89,14 @@ enum SelfTest {
               Pricing.normalize(model: "gpt-5.6-codex") == "gpt-5.6-codex"
                   && !Pricing.priceIsExact(model: "gpt-5.6-codex")
                   && !Pricing.priceIsExact(model: "gpt-5.5-codex"))
+        check("GPT-6.1 Sol and Sonnet 5.5 cache rates",
+              Pricing.priceIsExact(model: "gpt-6.1-sol") && Pricing.priceIsExact(model: "claude-sonnet-5-5")
+                  && abs(Pricing.cost(model: "gpt-6.1-sol", tokens: .init(cacheRead: 10_000), at: september) - 0.001) < 1e-9
+                  && abs(Pricing.cost(model: "claude-sonnet-5-5", tokens: .init(cacheRead: 10_000), at: september) - 0.001) < 1e-9)
+        check("Haiku 5.5 prompt-length pricing",
+              Pricing.priceIsExact(model: "claude-haiku-5-5")
+                  && abs(Pricing.cost(model: "claude-haiku-5-5", tokens: .init(input: 100_000), at: september) - 0.01) < 1e-9
+                  && abs(Pricing.cost(model: "claude-haiku-5-5", tokens: .init(input: 100_001), at: september) - 0.0500005) < 1e-9)
 
         // Regression: the family-keyword fallback used to funnel every Opus into 4.8, so a
         // real `claude-opus-5` record was renamed and merged into the 4.8 row. Each tier
@@ -117,7 +125,8 @@ enum SelfTest {
                          - Pricing.cost(model: "claude-fable-5", tokens: millionTokens, at: july)) < 0.000_001)
         check("bare family selectors mean the current model",
               Pricing.normalize(model: "opus") == "anthropic/claude-opus-5-5"
-                  && Pricing.normalize(model: "sonnet") == "anthropic/claude-sonnet-5")
+                  && Pricing.normalize(model: "sonnet") == "anthropic/claude-sonnet-5-5"
+                  && Pricing.normalize(model: "haiku") == "anthropic/claude-haiku-5-5")
         // 1M each of input/output/cacheRead/cacheWrite at $5 / $25 / $0.5 / $6.25 = $36.75.
         check("Opus 5 priced at the Opus tier, not the generic fallback",
               Pricing.priceIsExact(model: "claude-opus-5")
@@ -134,6 +143,11 @@ enum SelfTest {
         let monthModels = snap.overviews.first { $0.range == .month }?.models.count ?? 0
         let todayModels = snap.overviews.first { $0.range == .today }?.models.count ?? 0
         check("month composition ⊇ today", monthModels >= todayModels)
+        check("all range projects retained", snap.overviews.allSatisfy { $0.projects.count == $0.spend.sessions })
+        check("range trends match totals", snap.overviews.allSatisfy {
+            $0.trend.reduce(0) { $0 + $1.tokens } == $0.spend.tokens.total
+                && abs($0.trend.reduce(0) { $0 + $1.cost } - $0.spend.cost) < 0.000_001
+        })
         let projectDetailsAgree = snap.overviews.flatMap(\.projects).allSatisfy { project in
             let modelCost = project.models.reduce(0) { $0 + $1.cost }
             let modelTokens = project.models.reduce(0) { $0 + $1.tokens.total }

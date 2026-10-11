@@ -84,8 +84,9 @@ final class Scanner {
     /// records preserve the absolute last-turn input size for long-context pricing. v8:
     /// Codex cache-write tokens are split from fresh input instead of being discarded.
     /// v9: Codex prefers per-response usage records and no longer counts a prior
-    /// session's cumulative counter as the first turn of each rollout file.
-    private static let cacheVersion = 9
+    /// session's cumulative counter as the first turn of each rollout file. v10:
+    /// Codex records follow per-turn working-directory changes.
+    private static let cacheVersion = 10
 
     private struct CacheFile: Codable {
         var version: Int

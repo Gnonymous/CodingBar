@@ -82,9 +82,14 @@ public enum CodexScanner {
                 // token_count delta must be priced/attributed under the model in
                 // effect at that turn — freezing on the first one mis-prices every
                 // turn after a switch and skews model composition + fuel classification.
-                if let payload = obj["payload"] as? [String: Any],
-                   let m = payload["model"] as? String, !m.isEmpty {
+                guard let payload = obj["payload"] as? [String: Any] else { return }
+                if let m = payload["model"] as? String, !m.isEmpty {
                     model = m
+                }
+                // Handoffs can move a running session to another checkout. The
+                // turn's directory is authoritative for both usage and git attribution.
+                if let c = payload["cwd"] as? String, !c.isEmpty {
+                    cwd = c
                 }
 
             case "response_item":
