@@ -740,7 +740,7 @@ final class SmokeTests: XCTestCase {
 
         // The bare selectors Claude Code writes when you pick a family, not a version.
         XCTAssertEqual(Pricing.normalize(model: "opus"), "anthropic/claude-opus-5-5")
-        XCTAssertEqual(Pricing.normalize(model: "sonnet"), "anthropic/claude-sonnet-5")
+        XCTAssertEqual(Pricing.normalize(model: "sonnet"), "anthropic/claude-sonnet-5-5")
     }
 
     /// "Unknown → newest" is only safe while every known tier is enumerated. Opus 4.1 costs

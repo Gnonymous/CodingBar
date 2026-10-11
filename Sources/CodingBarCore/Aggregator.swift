@@ -34,8 +34,6 @@ public enum Aggregator {
     /// network-fetched quota each run. All three overview ranges are precomputed.
     public static func run(now: Date = Date(), quota: [QuotaWindow] = [], menuQuotaProvider: Provider? = nil,
                            language: AppLanguage = .en) -> Snapshot {
-        let cal = Calendar.current
-
         // One shared Scanner so the on-disk cache is loaded (and saved) once per run,
         // not once per provider — the cache decode is one of the heaviest steps in
         // boot-time memory because it goes through `JSONSerialization`.
@@ -43,6 +41,24 @@ public enum Aggregator {
         // token/cost/behavior aggregation is 100% local
         let (claudeRecords, _) = ClaudeScanner.scan(scanner: scanner)
         let codexRecords = CodexScanner.scan(scanner: scanner)
+        let forecastInsight = Forecaster.recordAndForecast(quota: quota, now: now, language: language)
+        let quotaForecast = Forecaster.forecastByProvider(quota: quota, now: now, language: language)
+        return aggregate(claudeRecords: claudeRecords, codexRecords: codexRecords, now: now,
+                         quota: quota, menuQuotaProvider: menuQuotaProvider, language: language,
+                         forecastInsight: forecastInsight, quotaForecast: quotaForecast)
+    }
+
+    /// Accepts parsed records and optional git output so accounting can be checked
+    /// without reading user logs, repositories, or persisted quota history.
+    static func aggregate(claudeRecords: [RawRecord], codexRecords: [RawRecord], now: Date,
+                          quota: [QuotaWindow] = [], menuQuotaProvider: Provider? = nil,
+                          language: AppLanguage = .en, gitOutput: GitCorrelator.RangeOutputs? = nil,
+                          forecastInsight: Insight? = nil, quotaForecast: [String: String] = [:]) -> Snapshot {
+        let cal = Calendar.current
+        // A scan may observe records written after its start. Keep every snapshot
+        // surface on that same cutoff, including the current hour/day's trend bucket.
+        let claudeRecords = claudeRecords.filter { $0.timestamp <= now }
+        let codexRecords = codexRecords.filter { $0.timestamp <= now }
         let allRecords = claudeRecords + codexRecords
         func recordCost(_ record: RawRecord) -> Double {
             Pricing.cost(model: record.model, tokens: record.tokens,
@@ -102,7 +118,7 @@ public enum Aggregator {
             if seenCwd.insert(r.cwd).inserted { todayCwds.append(r.cwd) }
         }
         let scanCwds = todayCwds + monthCwds.prefix(10).filter { !seenCwd.contains($0) }
-        let gitRanges = GitCorrelator.buildRanges(cwds: scanCwds, now: now)
+        let gitRanges = gitOutput ?? GitCorrelator.buildRanges(cwds: scanCwds, now: now)
 
         // The trend sparkline follows the range pill: Today buckets by hour (since
         // 00:00), 7d/30d by calendar day. Each overview builds its own series so the
@@ -198,8 +214,6 @@ public enum Aggregator {
                                        trend: trendDates.map { entry.buckets[$0] ?? DayPoint(date: $0, cost: 0, tokens: 0) })
                 }
                 .sorted { $0.cost > $1.cost }
-                .prefix(8)
-                .map { $0 }
             return (models, projects)
         }
 
@@ -278,10 +292,6 @@ public enum Aggregator {
         // Pillar ② — parallel live sessions + current burn rate ($/min)
         let (liveSessions, burnPerMin) = FuelCalculator.liveSessions(
             claudeRecords: claudeRecords, codexRecords: codexRecords, now: now)
-
-        // Pillar ④ — Forecast (records history, returns coach insight)
-        let forecastInsight = Forecaster.recordAndForecast(quota: quota, now: now, language: language)
-        let quotaForecast = Forecaster.forecastByProvider(quota: quota, now: now, language: language)
 
         // Pillar ④b — Coach tips
         var coach: [Insight] = Coach.build(from: todayRecords, language: language)

@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.gnonymous.codingbar</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>1.2.1</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>1.2.1</string>
     <key>CFBundleExecutable</key>
     <string>CodingBar</string>
     <key>CFBundleIconFile</key>
