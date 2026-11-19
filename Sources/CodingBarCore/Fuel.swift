@@ -33,6 +33,7 @@ enum FuelCalculator {
         let m = model.lowercased()
         if m.contains("opus")   { return "opus" }
         if m.contains("fable")  { return "fable" }
+        if m.contains("mythos") { return "mythos" }
         if m.contains("sonnet") { return "sonnet" }
         if m.contains("haiku")  { return "haiku" }
         if m.contains("gpt") || m.contains("codex") { return "gpt" }

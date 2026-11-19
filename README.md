@@ -18,11 +18,11 @@
 </p>
 
 <details>
-<summary><strong>More views — Composition · Insights · Light mode</strong></summary>
+<summary><strong>More views — Cost · Insights · Light mode</strong></summary>
 <br/>
 <table>
   <tr>
-    <td><img src="docs/assets/panel-composition.png" alt="Composition tab" /></td>
+    <td><img src="docs/assets/panel-composition.png" alt="Cost tab" /></td>
     <td><img src="docs/assets/panel-insights.png" alt="Insights tab" /></td>
     <td><img src="docs/assets/panel-light.png" alt="Light mode" /></td>
   </tr>
@@ -33,7 +33,7 @@
 
 Tokei and CodexBar show you a **bill**. CodingBar shows you a **dashboard**: what you and the AI got done, whether it was worth it, and how to spend smarter next time. Tokens and cost are the foundation; insight is the point.
 
-Everything is read from your local **Claude Code** and **Codex** logs — incremental, zero external dependencies, no Xcode. **The only automatic network call is live quota** — a read-only request with your own token (plus an optional, user-triggered update check).
+Everything is read from your local **Claude Code** and **Codex** logs — incremental, no Xcode project. **The only network call on by default is live quota** — a read-only request with your own token (plus an opt-in update check).
 
 ## Features
 
@@ -54,8 +54,8 @@ Everything is read from your local **Claude Code** and **Codex** logs — increm
 - **Live coach**: a context fuel gauge for the current session (with 1M-context detection), a quota burn-down forecast, and savings tips like *"8 simple tasks ran on Opus — Haiku would've saved $0.9"*.
 - **Behavior mirror**: your tool-use mix (write / read / run / search), collaboration rhythm, and a golden-hours heatmap — all derived from the `tool_use` events in your logs.
 - **A living menu bar**: a monochrome pulse that beats with real-time throughput, plus two rows of strict tabular figures — today's tokens / spend and remaining quota, always visible.
-- **Local-first & private**: usage, cost, behavior and git stay 100% offline. The only automatic network call is quota — a read-only GET of *your* usage, nothing uploaded, no password prompts (an optional, user-tapped update check is the sole exception).
-- **Native & zero-dependency**: pure SwiftPM, no Xcode project, no third-party packages. Reads `~/.claude/projects` and `~/.codex/sessions` directly.
+- **Local-first & private**: usage, cost, behavior and git stay 100% offline. The only network call on by default is quota — a read-only GET of *your* usage, nothing uploaded, no password prompts (the opt-in update check is the sole exception).
+- **Native & lightweight**: pure SwiftPM, no Xcode project. The only third-party package is [Sparkle](https://sparkle-project.org), for in-app updates. Reads `~/.claude/projects` and `~/.codex/sessions` directly.
 
 ## Install
 
@@ -87,7 +87,7 @@ make package    # produce dist/CodingBar.app
 Click the menu-bar item to open a three-tab panel:
 
 - **Overview** (总览) — outcome next to cost (git output ‖ today's spend), `$/line` & `$/commit`, the live coach (context fuel + savings tips), quota bars with burn-down forecasts, and a 7-day trend.
-- **Composition** (构成) — where the money went: spend broken down by model and by project. Click a project to see its model costs and hourly or daily spend for the selected range.
+- **Cost** (构成) — where the money went: spend broken down by model and by project. Click a project to see its model costs and hourly or daily spend for the selected range.
 - **Insights** (洞察) — code output, tool-use mix, golden-hours heatmap, savings tips, and a quota-depletion forecast.
 
 > **How the numbers are computed.** *Spend* is an **estimate at standard pay-as-you-go API prices** (`Pricing.swift`), **not your subscription bill** — on a Max / ChatGPT plan, read it as "equivalent API value," not money actually charged. Models without a published rate use a visibly approximate estimate. *Code output* is **approximate git attribution**: all non-merge commits in a session's working directory within the time window — it can't tell hand-written from AI commits and excludes uncommitted work. *Codex* uses per-response token usage in recent logs; older logs use cumulative-counter deltas without charging the prior session's starting balance.
@@ -95,8 +95,8 @@ Click the menu-bar item to open a three-tab panel:
 ## Privacy
 
 - **Usage / cost / behavior / git** — 100% local and offline. Reads only `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`. Prices are compiled-in defaults (see `Sources/CodingBarCore/Pricing.swift`).
-- **Quota** — the only *automatic* networked path. A **read-only GET** with your own OAuth token to each provider's usage endpoint (Claude `api.anthropic.com/api/oauth/usage`, Codex `chatgpt.com/backend-api/wham/usage`). It never uploads local content and never reads billing detail. 5-minute TTL cache.
-- **Update check** — the only *other* network access: a **user-initiated** read-only GET to the public GitHub Releases API, fired only when you tap "Check for updates" in Settings. No auth, no telemetry, nothing uploaded.
+- **Quota** — the only networked path that is on by default. A **read-only GET** with your own OAuth token to each provider's usage endpoint (Claude `api.anthropic.com/api/oauth/usage`, Codex `chatgpt.com/backend-api/wham/usage`). It never uploads local content and never reads billing detail. 5-minute TTL cache.
+- **Updates** — the only *other* network access, handled by Sparkle and **off by default**. It fetches a small `appcast.xml` from GitHub Releases when you tap "Check" in Settings, or daily once you turn on "Auto-check for updates"; an update is downloaded only after you confirm, and is rejected unless its EdDSA signature matches the key shipped in the app. No auth, no telemetry, nothing uploaded.
 - **No password prompts** — Claude's OAuth token lives in the Keychain. A self-signed app reading it directly makes macOS re-prompt endlessly, so CodingBar spawns the Apple-signed `/usr/bin/security` (inside that entry's trusted ACL) to read it silently, and degrades to *"quota unavailable"* if it can't. **Never a password dialog.** Codex uses `~/.codex/auth.json`.
 
 ## Architecture

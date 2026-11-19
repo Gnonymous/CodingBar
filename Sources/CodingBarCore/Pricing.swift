@@ -44,15 +44,22 @@ public enum Pricing {
         // Deprecated (retires 2026-08-05) but priced 3x the 4.5+ tiers, so it must be
         // enumerated: the "unknown Opus → newest" fallback would otherwise bill it at $5/$25.
         "anthropic/claude-opus-4-1":   ModelPrice(input: 15,   output: 75,  cacheRead: 1.5,   cacheWrite5m: 18.75, cacheWrite1h: 30),
+        "anthropic/claude-opus-4":     ModelPrice(input: 15,   output: 75,  cacheRead: 1.5,   cacheWrite5m: 18.75, cacheWrite1h: 30),
+        "anthropic/claude-fable-5-2":  ModelPrice(input: 8,    output: 40,  cacheRead: 0.2,   cacheWrite5m: 10, cacheWrite1h: 16),
         "anthropic/claude-fable-5-1":  ModelPrice(input: 10,   output: 50,  cacheRead: 0.25,  cacheWrite5m: 12.5, cacheWrite1h: 20),
         "anthropic/claude-fable-5":    ModelPrice(input: 10,   output: 50,  cacheRead: 1,     cacheWrite5m: 12.5, cacheWrite1h: 20),
         // Project Glasswing, invitation-only — same tier as Fable 5. Without a row it would
         // land on the generic $3/$15 fallback, i.e. 3.3x underpriced.
+        "anthropic/claude-mythos-5-2": ModelPrice(input: 8,    output: 40,  cacheRead: 0.2,   cacheWrite5m: 10, cacheWrite1h: 16),
         "anthropic/claude-mythos-5-1": ModelPrice(input: 10,   output: 50,  cacheRead: 0.25,  cacheWrite5m: 12.5, cacheWrite1h: 20),
         "anthropic/claude-mythos-5":   ModelPrice(input: 10,   output: 50,  cacheRead: 1,     cacheWrite5m: 12.5, cacheWrite1h: 20),
         "anthropic/claude-sonnet-5-5": ModelPrice(input: 2,    output: 10,  cacheRead: 0.1,   cacheWrite5m: 2.5, cacheWrite1h: 4),
         "anthropic/claude-sonnet-5":   ModelPrice(input: 2,    output: 10,  cacheRead: 0.2,   cacheWrite5m: 2.5, cacheWrite1h: 4),
         "anthropic/claude-sonnet-4-6": ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
+        // Retired 4.x tiers still sit in old transcripts at 1.5x the Sonnet 5 rate the
+        // "unknown Sonnet → newest" fallback would otherwise bill them at.
+        "anthropic/claude-sonnet-4-5": ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
+        "anthropic/claude-sonnet-4":   ModelPrice(input: 3,    output: 15,  cacheRead: 0.3,   cacheWrite5m: 3.75, cacheWrite1h: 6),
         // Haiku 5.5 applies the higher tier to the whole request above 100K input
         // tokens, including cache reads and writes: https://platform.claude.com/docs/en/about-claude/pricing
         "anthropic/claude-haiku-5-5":  ModelPrice(input: 0.1,  output: 0.5, cacheRead: 0.01,  cacheWrite5m: 0.125, cacheWrite1h: 0.2,
@@ -60,13 +67,18 @@ public enum Pricing {
                                                 longContextInputMultiplier: 5, longContextOutputMultiplier: 5),
         "anthropic/claude-haiku-4-5":  ModelPrice(input: 1,    output: 5,   cacheRead: 0.1,   cacheWrite5m: 1.25, cacheWrite1h: 2),
         // OpenAI standard pay-as-you-go rates. Pro models publish no cached-input
-        // discount. GPT-6 and GPT-5.6 cache writes use 1.25x input; both TTL fields
-        // use that one tier. Source: https://developers.openai.com/api/docs/pricing
+        // discount. GPT-6 and GPT-5.6 publish two cache-write tiers (30-minute 1.25x,
+        // 12-hour 2.5x input); the logs carry no TTL, so both fields use the 30-minute
+        // tier. Source: https://developers.openai.com/api/docs/pricing
+        "openai/gpt-6.2-astra":        openAI(input: 8,    cachedInput: 0.4,   output: 40,  cacheWrite: 10,   longContext: true),
+        "openai/gpt-6.2-sol":          openAI(input: 2,    cachedInput: 0.1,   output: 10,  cacheWrite: 2.5,  longContext: true),
         "openai/gpt-6-astra":          openAI(input: 10,   cachedInput: 1,     output: 50,  cacheWrite: 12.5, longContext: true),
         "openai/gpt-6.1-sol":          openAI(input: 2,    cachedInput: 0.1,   output: 10,  cacheWrite: 2.5,  longContext: true),
+        "openai/gpt-6.1-terra":        openAI(input: 1,    cachedInput: 0.05,  output: 5,   cacheWrite: 1.25, longContext: true),
         "openai/gpt-6-sol":            openAI(input: 2,    cachedInput: 0.2,   output: 10,  cacheWrite: 2.5,  longContext: true),
         "openai/gpt-6-luna":           openAI(input: 0.1,  cachedInput: 0.01,  output: 0.5, cacheWrite: 0.125,longContext: true),
-        // Promotional standard rate confirmed through at least 2026-11-21.
+        // GPT-5.6 Sol is on a promotional rate published as valid until 2026-11-30;
+        // re-check this row after that date.
         "openai/gpt-5.6-sol":          openAI(input: 4,    cachedInput: 0.4,   output: 20,  cacheWrite: 5,    longContext: true),
         "openai/gpt-5.6-terra":        openAI(input: 2,    cachedInput: 0.2,   output: 12,  cacheWrite: 2.5,  longContext: true),
         "openai/gpt-5.6-luna":         openAI(input: 0.2,  cachedInput: 0.02,  output: 1.2, cacheWrite: 0.25, longContext: true),
@@ -127,13 +139,18 @@ public enum Pricing {
         for alias in ["opus-4.6", "claude-opus-4-6"] { m[alias] = "anthropic/claude-opus-4-6" }
         for alias in ["opus-4.5", "claude-opus-4-5", "claude-opus-4-5-20251101"] { m[alias] = "anthropic/claude-opus-4-5" }
         for alias in ["opus-4.1", "claude-opus-4-1", "claude-opus-4-1-20250805"] { m[alias] = "anthropic/claude-opus-4-1" }
-        for alias in ["fable-5.1", "claude-fable-5-1", "fable"] { m[alias] = "anthropic/claude-fable-5-1" }
+        for alias in ["opus-4", "claude-opus-4"] { m[alias] = "anthropic/claude-opus-4" }
+        for alias in ["fable-5.2", "claude-fable-5-2", "fable"] { m[alias] = "anthropic/claude-fable-5-2" }
+        for alias in ["fable-5.1", "claude-fable-5-1"] { m[alias] = "anthropic/claude-fable-5-1" }
         for alias in ["fable-5", "claude-fable-5"] { m[alias] = "anthropic/claude-fable-5" }
-        for alias in ["mythos-5.1", "claude-mythos-5-1", "mythos"] { m[alias] = "anthropic/claude-mythos-5-1" }
+        for alias in ["mythos-5.2", "claude-mythos-5-2", "mythos"] { m[alias] = "anthropic/claude-mythos-5-2" }
+        for alias in ["mythos-5.1", "claude-mythos-5-1"] { m[alias] = "anthropic/claude-mythos-5-1" }
         for alias in ["mythos-5", "claude-mythos-5"] { m[alias] = "anthropic/claude-mythos-5" }
         for alias in ["sonnet-5.5", "claude-sonnet-5-5", "sonnet"] { m[alias] = "anthropic/claude-sonnet-5-5" }
         for alias in ["sonnet-5", "claude-sonnet-5"] { m[alias] = "anthropic/claude-sonnet-5" }
         for alias in ["sonnet-4.6", "claude-sonnet-4-6"] { m[alias] = "anthropic/claude-sonnet-4-6" }
+        for alias in ["sonnet-4.5", "claude-sonnet-4-5"] { m[alias] = "anthropic/claude-sonnet-4-5" }
+        for alias in ["sonnet-4", "claude-sonnet-4"] { m[alias] = "anthropic/claude-sonnet-4" }
         for alias in ["haiku-5.5", "claude-haiku-5-5", "haiku"] { m[alias] = "anthropic/claude-haiku-5-5" }
         for alias in ["haiku-4.5", "claude-haiku-4-5",
                       "claude-haiku-4-5-20251001"] { m[alias] = "anthropic/claude-haiku-4-5" }
@@ -220,17 +237,25 @@ public enum Pricing {
         "anthropic/claude-opus-4-6":   "Opus 4.6",
         "anthropic/claude-opus-4-5":   "Opus 4.5",
         "anthropic/claude-opus-4-1":   "Opus 4.1",
+        "anthropic/claude-opus-4":     "Opus 4",
+        "anthropic/claude-fable-5-2":  "Fable 5.2",
         "anthropic/claude-fable-5-1":  "Fable 5.1",
         "anthropic/claude-fable-5":    "Fable 5",
+        "anthropic/claude-mythos-5-2": "Mythos 5.2",
         "anthropic/claude-mythos-5-1": "Mythos 5.1",
         "anthropic/claude-mythos-5":   "Mythos 5",
         "anthropic/claude-sonnet-5-5": "Sonnet 5.5",
         "anthropic/claude-sonnet-5":   "Sonnet 5",
         "anthropic/claude-sonnet-4-6": "Sonnet 4.6",
+        "anthropic/claude-sonnet-4-5": "Sonnet 4.5",
+        "anthropic/claude-sonnet-4":   "Sonnet 4",
         "anthropic/claude-haiku-5-5":  "Haiku 5.5",
         "anthropic/claude-haiku-4-5":  "Haiku 4.5",
+        "openai/gpt-6.2-astra":        "GPT-6.2 Astra",
+        "openai/gpt-6.2-sol":          "GPT-6.2 Sol",
         "openai/gpt-6-astra":          "GPT-6 Astra",
         "openai/gpt-6.1-sol":          "GPT-6.1 Sol",
+        "openai/gpt-6.1-terra":        "GPT-6.1 Terra",
         "openai/gpt-6-sol":            "GPT-6 Sol",
         "openai/gpt-6-luna":           "GPT-6 Luna",
         "openai/gpt-5.6-sol":          "GPT-5.6 Sol",
@@ -293,10 +318,10 @@ public enum Pricing {
         if priceTable[key] == nil {
             let modelID = String(key.lowercased().split(separator: "/").last ?? Substring(key.lowercased()))
             if modelID.hasPrefix("claude-opus-") { return priceTable["anthropic/claude-opus-5-5"]! }
-            if modelID.hasPrefix("claude-fable-") { return priceTable["anthropic/claude-fable-5-1"]! }
-            if modelID.hasPrefix("claude-mythos-") { return priceTable["anthropic/claude-mythos-5-1"]! }
-            if modelID.hasPrefix("claude-sonnet-") { return priceTable["anthropic/claude-sonnet-5"]! }
-            if modelID.hasPrefix("claude-haiku-") { return priceTable["anthropic/claude-haiku-4-5"]! }
+            if modelID.hasPrefix("claude-fable-") { return priceTable["anthropic/claude-fable-5-2"]! }
+            if modelID.hasPrefix("claude-mythos-") { return priceTable["anthropic/claude-mythos-5-2"]! }
+            if modelID.hasPrefix("claude-sonnet-") { return priceTable["anthropic/claude-sonnet-5-5"]! }
+            if modelID.hasPrefix("claude-haiku-") { return priceTable["anthropic/claude-haiku-5-5"]! }
         }
         return priceTable[key] ?? fallback
     }

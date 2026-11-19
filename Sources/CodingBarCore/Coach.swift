@@ -22,7 +22,7 @@ enum Coach {
             let compared = TokenBreakdown(input: r.tokens.input, output: r.tokens.output,
                                           cacheRead: r.tokens.cacheRead)
             totalSaved += Pricing.cost(model: r.model, tokens: compared, at: r.timestamp)
-                - Pricing.cost(model: "claude-haiku-4-5", tokens: compared, at: r.timestamp)
+                - Pricing.cost(model: "haiku", tokens: compared, at: r.timestamp)
             count += 1
         }
 

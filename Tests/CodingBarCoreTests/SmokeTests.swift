@@ -574,6 +574,11 @@ final class SmokeTests: XCTestCase {
                                     at: september, cacheWrite1h: 1_000_000), 80.25, accuracy: 0.000_001)
         XCTAssertEqual(Pricing.cost(model: "claude-mythos-5-1", tokens: millionTokens,
                                     at: september, cacheWrite1h: 1_000_000), 80.25, accuracy: 0.000_001)
+        // Fable/Mythos 5.2: $8 + $40 + $0.20 + $16 (1h write) = $64.20.
+        XCTAssertEqual(Pricing.cost(model: "claude-fable-5-2", tokens: millionTokens,
+                                    at: september, cacheWrite1h: 1_000_000), 64.2, accuracy: 0.000_001)
+        XCTAssertEqual(Pricing.cost(model: "claude-mythos-5-2", tokens: millionTokens,
+                                    at: september, cacheWrite1h: 1_000_000), 64.2, accuracy: 0.000_001)
     }
 
     func testOpenAIModelPricesAndAliasesMatchCurrentTable() {
@@ -721,12 +726,20 @@ final class SmokeTests: XCTestCase {
             ("claude-opus-4-6", "anthropic/claude-opus-4-6"),
             ("claude-opus-4-5-20251101", "anthropic/claude-opus-4-5"),
             ("claude-opus-4-1-20250805", "anthropic/claude-opus-4-1"),
+            ("claude-opus-4-20250514", "anthropic/claude-opus-4"),
+            ("claude-fable-5-2", "anthropic/claude-fable-5-2"),
+            ("claude-mythos-5-2", "anthropic/claude-mythos-5-2"),
             ("claude-fable-5-1", "anthropic/claude-fable-5-1"),
             ("claude-fable-5", "anthropic/claude-fable-5"),
             ("claude-mythos-5-1", "anthropic/claude-mythos-5-1"),
             ("claude-mythos-5", "anthropic/claude-mythos-5"),
             ("claude-sonnet-5", "anthropic/claude-sonnet-5"),
             ("claude-sonnet-4-6", "anthropic/claude-sonnet-4-6"),
+            ("claude-sonnet-4-5-20250929", "anthropic/claude-sonnet-4-5"),
+            ("claude-sonnet-4-20250514", "anthropic/claude-sonnet-4"),
+            ("gpt-6.2-astra", "openai/gpt-6.2-astra"),
+            ("gpt-6.2-sol", "openai/gpt-6.2-sol"),
+            ("gpt-6.1-terra", "openai/gpt-6.1-terra"),
         ] {
             XCTAssertEqual(Pricing.normalize(model: raw), expected, "\(raw) must keep its own identity")
         }
@@ -741,6 +754,26 @@ final class SmokeTests: XCTestCase {
         // The bare selectors Claude Code writes when you pick a family, not a version.
         XCTAssertEqual(Pricing.normalize(model: "opus"), "anthropic/claude-opus-5-5")
         XCTAssertEqual(Pricing.normalize(model: "sonnet"), "anthropic/claude-sonnet-5-5")
+        XCTAssertEqual(Pricing.normalize(model: "fable"), "anthropic/claude-fable-5-2")
+        XCTAssertEqual(Pricing.normalize(model: "mythos"), "anthropic/claude-mythos-5-2")
+
+        // An unrecognized version is estimated at its family's newest tier.
+        let input = TokenBreakdown(input: 1_000_000)
+        let now = Date()
+        XCTAssertEqual(Pricing.cost(model: "claude-fable-9", tokens: input, at: now), 8, accuracy: 1e-9)
+        XCTAssertEqual(Pricing.cost(model: "claude-haiku-9", tokens: TokenBreakdown(input: 100_000), at: now),
+                       0.01, accuracy: 1e-9)
+        XCTAssertEqual(Pricing.cost(model: "claude-sonnet-9", tokens: TokenBreakdown(cacheRead: 1_000_000), at: now),
+                       0.1, accuracy: 1e-9)
+
+        // Retired tiers that cost more than the newest of their family.
+        XCTAssertEqual(Pricing.cost(model: "claude-opus-4-20250514", tokens: input, at: now), 15, accuracy: 1e-9)
+        XCTAssertEqual(Pricing.cost(model: "claude-sonnet-4-5", tokens: input, at: now), 3, accuracy: 1e-9)
+        // 100K stays under OpenAI's 272K long-context threshold.
+        XCTAssertEqual(Pricing.cost(model: "gpt-6.2-astra", tokens: TokenBreakdown(input: 100_000), at: now),
+                       0.8, accuracy: 1e-9)
+        XCTAssertEqual(Pricing.cost(model: "gpt-6.1-terra", tokens: TokenBreakdown(cacheRead: 100_000), at: now),
+                       0.005, accuracy: 1e-9)
     }
 
     /// "Unknown → newest" is only safe while every known tier is enumerated. Opus 4.1 costs
