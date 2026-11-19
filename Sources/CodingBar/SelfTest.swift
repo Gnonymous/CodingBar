@@ -55,6 +55,20 @@ enum SelfTest {
               && abs(Pricing.cost(model: "claude-fable-5-1", tokens: millionTokens,
                                   at: september, cacheWrite1h: 1_000_000) - 80.25) < 0.000_001
               && Pricing.priceIsExact(model: "claude-mythos-5-1"))
+        check("Fable/Mythos 5.2 tier and bare selectors",
+              abs(Pricing.cost(model: "claude-fable-5-2", tokens: millionTokens,
+                               at: september, cacheWrite1h: 1_000_000) - 64.2) < 0.000_001
+              && Pricing.priceIsExact(model: "claude-mythos-5-2")
+              && Pricing.normalize(model: "fable") == "anthropic/claude-fable-5-2"
+              && Pricing.normalize(model: "mythos") == "anthropic/claude-mythos-5-2")
+        check("GPT-6.2 and GPT-6.1 Terra rates",
+              abs(Pricing.cost(model: "gpt-6.2-astra", tokens: .init(input: 100_000), at: september) - 0.8) < 1e-9
+              && abs(Pricing.cost(model: "gpt-6.2-sol", tokens: .init(cacheRead: 100_000), at: september) - 0.01) < 1e-9
+              && abs(Pricing.cost(model: "gpt-6.1-terra", tokens: .init(output: 100_000), at: september) - 0.5) < 1e-9)
+        check("retired Claude 4 tiers keep their higher rates",
+              Pricing.normalize(model: "claude-opus-4-20250514") == "anthropic/claude-opus-4"
+              && abs(Pricing.cost(model: "claude-opus-4-20250514", tokens: .init(input: 1_000_000), at: july) - 15) < 1e-9
+              && abs(Pricing.cost(model: "claude-sonnet-4-5-20250929", tokens: .init(input: 1_000_000), at: july) - 3) < 1e-9)
 
         let openAIBaseTokens = TokenBreakdown(input: 100_000, output: 100_000,
                                               cacheRead: 100_000, cacheWrite: 100_000)

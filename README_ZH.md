@@ -32,7 +32,7 @@
 
 Tokei / CodexBar 给你看的是**账单**。CodingBar 给你看的是**仪表盘**：你和 AI 干成了什么、值不值、下次怎么花得更聪明。token 和成本是底座，洞察才是重点。
 
-所有数据从本地 **Claude Code** 与 **Codex** 日志读取——增量扫描、零外部依赖、不需要 Xcode。**唯一自动联网的是额度查询**——用你自己的 token 发只读请求（外加一个可选、需手动触发的更新检查）。
+所有数据从本地 **Claude Code** 与 **Codex** 日志读取——增量扫描、不需要 Xcode 工程。**默认唯一联网的是额度查询**——用你自己的 token 发只读请求（外加一个需手动开启的更新检查）。
 
 ## 特性
 
@@ -53,8 +53,8 @@ Tokei / CodexBar 给你看的是**账单**。CodingBar 给你看的是**仪表�
 - **实时教练**：当前会话的上下文燃料表（含 1M-context 识别）、额度燃尽预测，以及省钱提示——如*「8 个简单任务用了 Opus，换 Haiku 可省 $0.9」*。
 - **行为镜子**：工具使用占比（写 / 读 / 跑 / 搜）、协作节奏、黄金时段热力图——全来自日志里的 `tool_use` 事件。
 - **活着的菜单栏**：单色脉冲随实时吞吐跳动，两行严格等宽数字——今日 token / 花费与剩余额度，随时可见。
-- **本地优先、隐私至上**：用量、成本、行为、git 全部 100% 离线。唯一自动联网调用是额度——只读查*你自己*的用量，不上传内容，不弹密码框（唯一例外是可选、需手动点击的更新检查）。
-- **原生、零依赖**：纯 SwiftPM，无 Xcode 工程，无第三方包。直接增量读取 `~/.claude/projects` 与 `~/.codex/sessions`。
+- **本地优先、隐私至上**：用量、成本、行为、git 全部 100% 离线。默认唯一的联网调用是额度——只读查*你自己*的用量，不上传内容，不弹密码框（唯一例外是需手动开启的更新检查）。
+- **原生、轻量**：纯 SwiftPM，无 Xcode 工程。唯一的第三方包是用于应用内更新的 [Sparkle](https://sparkle-project.org)。直接增量读取 `~/.claude/projects` 与 `~/.codex/sessions`。
 
 ## 安装
 
@@ -86,7 +86,7 @@ make package    # 产出 dist/CodingBar.app
 点击菜单栏图标，打开三 Tab 面板：
 
 - **总览**（Overview）— 成果与代价并置（git 产出 ‖ 今日花费）、`$/行` 与 `$/commit`、实时教练（上下文燃料 + 省钱提示）、额度进度条与燃尽预测、近 7 天趋势。
-- **构成**（Composition）— 钱花在哪：按模型和按项目拆解花费。
+- **构成**（Cost）— 钱花在哪：按模型和按项目拆解花费。点击项目可查看它在所选时间范围内的各模型花费，以及按小时或按天的花费。
 - **洞察**（Insights）— 代码产出、工具使用占比、黄金时段热力图、省钱提示、额度燃尽预测。
 
 > **数字是怎么算的。** *花费*是按 **标准 API 现付价估算**（`Pricing.swift`），**不是你的订阅账单**——包月 Max / ChatGPT 用户应把它读作「等价 API 价值」，而非实际扣款。未公布价格的模型使用带近似标记的估价。*代码产出*是**近似的 git 归因**：会话工作目录在时间窗内的全部非 merge 提交——无法区分手写与 AI 提交，且不含未提交改动。*Codex* 的新日志使用逐请求 token 用量；旧日志从累计计数器做差分，不把前一会话的初始累计值算作本次用量。
@@ -94,8 +94,8 @@ make package    # 产出 dist/CodingBar.app
 ## 隐私
 
 - **用量 / 成本 / 行为 / git** — 100% 本地、离线。只读取 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`。价格为编译期内置默认值（见 `Sources/CodingBarCore/Pricing.swift`）。
-- **额度** — 唯一*自动*联网的部分。带你自己的 OAuth token 向各家用量接口发**只读 GET**（Claude `api.anthropic.com/api/oauth/usage`、Codex `chatgpt.com/backend-api/wham/usage`）。不上传任何本地内容、不查消费明细。5 分钟 TTL 缓存。
-- **更新检查** — 唯一的*另一条*联网：**用户主动触发**的对公开 GitHub Releases API 的只读 GET，仅在你于设置中点「检查更新」时发起。无鉴权、无遥测、不上传任何内容。
+- **额度** — 唯一默认开启的联网部分。带你自己的 OAuth token 向各家用量接口发**只读 GET**（Claude `api.anthropic.com/api/oauth/usage`、Codex `chatgpt.com/backend-api/wham/usage`）。不上传任何本地内容、不查消费明细。5 分钟 TTL 缓存。
+- **更新** — 唯一的*另一条*联网，由 Sparkle 负责，**默认关闭**。只有你在设置里点「检查」，或打开「自动检查更新」后每天一次，才会从 GitHub Releases 拉取一个很小的 `appcast.xml`；更新包要你确认后才下载，且 EdDSA 签名与应用内置公钥不符就会被拒绝。无鉴权、无遥测、不上传任何内容。
 - **不弹密码框** — Claude 的 OAuth token 存在 Keychain。自签名进程直接读会被 macOS 反复弹窗，CodingBar 改为调用 Apple 签名的 `/usr/bin/security`（在该条目可信 ACL 内）静默读取，读不到就降级为*「额度不可用」*。**始终无弹窗。** Codex 走 `~/.codex/auth.json`。
 
 ## 架构
